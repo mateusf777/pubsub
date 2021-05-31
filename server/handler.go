@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mateusf777/tcplab/log"
+	"github.com/mateusf777/pubsub/log"
 
-	"github.com/mateusf777/tcplab/pubsub"
+	"github.com/mateusf777/pubsub/pubsub"
 )
 
 const ttl = 5 * time.Minute

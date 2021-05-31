@@ -8,12 +8,11 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/mateusf777/tcplab/log"
-	"github.com/mateusf777/tcplab/pubsub"
+	"github.com/mateusf777/pubsub/log"
+	"github.com/mateusf777/pubsub/pubsub"
 )
 
 func Start(address string) {
-	// Start listener
 	l, err := net.Listen("tcp4", address)
 	if err != nil {
 		log.Error("%v\n", err)

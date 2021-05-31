@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 
-	"github.com/mateusf777/tcplab/log"
+	"github.com/mateusf777/pubsub/log"
 )
 
 // PubSub represents a message router for handling the operations PUB, SUB and UNSUB

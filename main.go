@@ -5,9 +5,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/mateusf777/tcplab/server"
+	"github.com/mateusf777/pubsub/server"
 )
 
+// ATTENTION: This server has NO SECURITY whatsoever
+// If you expose it you're on your own.
 const defaultAddress = "127.0.0.1:9999"
 
 func main() {
