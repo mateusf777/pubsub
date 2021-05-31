@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"bufio"
@@ -7,6 +7,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mateusf777/tcplab/log"
+
+	"github.com/mateusf777/tcplab/pubsub"
 )
 
 const ttl = 5 * time.Minute
@@ -22,20 +26,20 @@ const (
 
 const closeErr = "use of closed network connection"
 
-func HandleConnection(c net.Conn, ps *PubSub) {
+func handleConnection(c net.Conn, ps *pubsub.PubSub) {
 	defer func(c net.Conn) {
 		err := c.Close()
 		if err != nil {
-			Log(ERR, "%v\n", err)
+			log.Error("%v\n", err)
 		}
-		Log(INFO, "Closed connection %s\n", c.RemoteAddr().String())
+		log.Info("Closed connection %s\n", c.RemoteAddr().String())
 	}(c)
 
 	//
 	closeHandler := make(chan bool)
 	stopTimeout := make(chan bool)
 
-	Log(INFO, "Serving %s\n", c.RemoteAddr().String())
+	log.Info("Serving %s\n", c.RemoteAddr().String())
 	client := c.RemoteAddr().String()
 
 	timeout := time.NewTicker(ttl)
@@ -49,11 +53,11 @@ func HandleConnection(c net.Conn, ps *PubSub) {
 				if strings.Contains(err.Error(), closeErr) {
 					return
 				}
-				Log(ERR, "%v\n", err)
+				log.Error("%v\n", err)
 				return
 			}
 
-			Log(DEBUG, "Resetting timeout...")
+			log.Debug("Resetting timeout...")
 			timeout.Reset(ttl)
 			timeoutCount = 0
 
@@ -61,7 +65,7 @@ func HandleConnection(c net.Conn, ps *PubSub) {
 			var result string
 			switch {
 			case strings.ToUpper(temp) == opStop:
-				Log(INFO, "Closing connection with %s\n", c.RemoteAddr().String())
+				log.Info("Closing connection with %s\n", c.RemoteAddr().String())
 				stopTimeout <- true
 				closeHandler <- true
 				break Loop
@@ -88,7 +92,7 @@ func HandleConnection(c net.Conn, ps *PubSub) {
 			}
 			_, err = c.Write([]byte(result))
 			if err != nil {
-				Log(ERR, "%v\n", err)
+				log.Error("%v\n", err)
 			}
 		}
 	}()
@@ -98,21 +102,21 @@ func HandleConnection(c net.Conn, ps *PubSub) {
 		for {
 			select {
 			case <-stopTimeout:
-				Log(DEBUG, "Stop timeout process %s\n", c.RemoteAddr().String())
+				log.Debug("Stop timeout process %s\n", c.RemoteAddr().String())
 				break Timeout
 
 			case <-timeout.C:
 				timeoutCount++
 				if timeoutCount > 2 {
-					Log(INFO, "Timeout %s\n", c.RemoteAddr().String())
+					log.Info("Timeout %s\n", c.RemoteAddr().String())
 					closeHandler <- true
 					break Timeout
 				}
 
-				Log(DEBUG, "Sending timeout...")
+				log.Debug("Sending timeout...")
 				_, err := c.Write([]byte(opPing + "\n"))
 				if err != nil {
-					Log(ERR, "%v\n", err)
+					log.Error("%v\n", err)
 				}
 
 			}
@@ -123,7 +127,7 @@ func HandleConnection(c net.Conn, ps *PubSub) {
 	return
 }
 
-func handlePub(c net.Conn, ps *PubSub, client string, received string) string {
+func handlePub(c net.Conn, ps *pubsub.PubSub, client string, received string) string {
 	result := "+OK\n"
 	args := strings.Split(received, " ")
 	if len(args) < 2 || len(args) > 3 {
@@ -134,23 +138,23 @@ func handlePub(c net.Conn, ps *PubSub, client string, received string) string {
 		return fmt.Sprintf("-ERR %v\n", err)
 	}
 
-	opts := make([]PubOpt, 0)
+	opts := make([]pubsub.PubOpt, 0)
 	if len(args) == 3 {
 		reply := args[2]
-		err := ps.Subscribe(reply, client, -1, func(msg Message) {
+		err := ps.Subscribe(reply, client, -1, func(msg pubsub.Message) {
 
 			result = fmt.Sprintf("MSG %s %s\r\n%v\r\n", msg.Subject, msg.Reply, msg.Value)
 
 			_, err := c.Write([]byte(result))
 			if err != nil {
-				Log(ERR, "%v\n", err)
+				log.Error("%v\n", err)
 			}
 
-		}, WithMaxMsg(1))
+		}, pubsub.WithMaxMsg(1))
 		if err != nil {
 			return fmt.Sprintf("-ERR %v\n", err)
 		}
-		opts = append(opts, WithReply(reply))
+		opts = append(opts, pubsub.WithReply(reply))
 	}
 
 	err = ps.Publish(args[1], msg[:len(msg)-2], opts...)
@@ -161,7 +165,7 @@ func handlePub(c net.Conn, ps *PubSub, client string, received string) string {
 	return result
 }
 
-func handleUnsub(ps *PubSub, client string, received string) string {
+func handleUnsub(ps *pubsub.PubSub, client string, received string) string {
 	result := "+OK\n"
 
 	args := strings.Split(received, " ")
@@ -177,7 +181,7 @@ func handleUnsub(ps *PubSub, client string, received string) string {
 	return result
 }
 
-func handleSub(c net.Conn, ps *PubSub, client string, received string) string {
+func handleSub(c net.Conn, ps *pubsub.PubSub, client string, received string) string {
 	result := "+OK\n"
 
 	args := strings.Split(received, " ")
@@ -186,22 +190,22 @@ func handleSub(c net.Conn, ps *PubSub, client string, received string) string {
 	}
 
 	id, _ := strconv.Atoi(args[2])
-	opts := make([]SubOpt, 0)
+	opts := make([]pubsub.SubOpt, 0)
 
 	if len(args) == 4 {
 		maxMsg, _ := strconv.Atoi(args[3])
-		opts = append(opts, WithMaxMsg(maxMsg))
+		opts = append(opts, pubsub.WithMaxMsg(maxMsg))
 	}
 	if len(args) == 5 {
 		group := args[4]
-		opts = append(opts, WithGroup(group))
+		opts = append(opts, pubsub.WithGroup(group))
 	}
 
-	err := ps.Subscribe(args[1], client, id, func(msg Message) {
+	err := ps.Subscribe(args[1], client, id, func(msg pubsub.Message) {
 		result = fmt.Sprintf("MSG %s %d %s\r\n%v\r\n", msg.Subject, id, msg.Reply, msg.Value)
 		_, err := c.Write([]byte(result))
 		if err != nil {
-			Log(ERR, "%v\n", err)
+			log.Error("%v\n", err)
 		}
 	}, opts...)
 	if err != nil {

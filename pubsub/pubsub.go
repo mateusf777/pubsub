@@ -1,8 +1,10 @@
-package main
+package pubsub
 
 import (
 	"fmt"
 	"math/rand"
+
+	"github.com/mateusf777/tcplab/log"
 )
 
 // PubSub represents a message router for handling the operations PUB, SUB and UNSUB
@@ -159,11 +161,11 @@ func (ps *PubSub) Unsubscribe(subject string, client string, id int) error {
 // It's started by the NewPubSub
 func (ps *PubSub) run() {
 
-	Log(INFO, "Message router started")
+	log.Info("Message router started")
 	ps.running = true
 
 	defer func() {
-		Log(INFO, "Message router stopped")
+		log.Info("Message router stopped")
 		ps.running = false
 	}()
 
