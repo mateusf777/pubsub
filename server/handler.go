@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bufio"
 	"fmt"
 	"net"
 	"strconv"
@@ -24,6 +23,12 @@ const (
 	opPing  = "PING"
 )
 
+const (
+	crlf  = "\r\n"
+	space = " "
+	OK    = "+OK" + crlf
+)
+
 const closeErr = "use of closed network connection"
 
 func handleConnection(c net.Conn, ps *pubsub.PubSub) {
@@ -35,7 +40,6 @@ func handleConnection(c net.Conn, ps *pubsub.PubSub) {
 		log.Info("Closed connection %s\n", c.RemoteAddr().String())
 	}(c)
 
-	//
 	closeHandler := make(chan bool)
 	stopTimeout := make(chan bool)
 
@@ -43,108 +47,157 @@ func handleConnection(c net.Conn, ps *pubsub.PubSub) {
 	client := c.RemoteAddr().String()
 
 	timeout := time.NewTicker(ttl)
-	timeoutCount := 0
+	timeoutReset := make(chan bool)
+
+	buffer := make([]byte, 1024)
+	dataCh := make(chan string, 10)
 
 	go func() {
 	Loop:
 		for {
-			netData, err := bufio.NewReader(c).ReadString('\n')
-			if err != nil {
-				if strings.Contains(err.Error(), closeErr) {
-					return
+			go read(c, buffer, dataCh)
+
+			// dispatch
+			accumulator := ""
+			for netData := range dataCh {
+				timeoutReset <- true
+
+				temp := strings.TrimSpace(netData)
+				if temp == "" {
+					continue
 				}
-				log.Error("%v\n", err)
-				return
-			}
 
-			log.Debug("Resetting timeout...")
-			timeout.Reset(ttl)
-			timeoutCount = 0
+				if accumulator != "" {
+					temp = accumulator + crlf + temp
+				}
 
-			temp := strings.TrimSpace(netData)
-			var result string
-			switch {
-			case strings.ToUpper(temp) == opStop:
-				log.Info("Closing connection with %s\n", c.RemoteAddr().String())
-				stopTimeout <- true
-				closeHandler <- true
-				break Loop
-
-			case strings.ToUpper(temp) == opPing:
-				result = opPong + "\n"
-				break
-
-			case strings.ToUpper(temp) == opPong:
-				result = "+OK\n"
-				break
-
-			case strings.HasPrefix(strings.ToUpper(temp), opPub):
-				result = handlePub(c, ps, client, temp)
-
-			case strings.HasPrefix(strings.ToUpper(temp), opSub):
-				result = handleSub(c, ps, client, temp)
-
-			case strings.HasPrefix(strings.ToUpper(temp), opUnsub):
-				result = handleUnsub(ps, client, temp)
-
-			default:
-				result = "-ERR invalid protocol message\n"
-			}
-			_, err = c.Write([]byte(result))
-			if err != nil {
-				log.Error("%v\n", err)
-			}
-		}
-	}()
-
-	go func() {
-	Timeout:
-		for {
-			select {
-			case <-stopTimeout:
-				log.Debug("Stop timeout process %s\n", c.RemoteAddr().String())
-				break Timeout
-
-			case <-timeout.C:
-				timeoutCount++
-				if timeoutCount > 2 {
-					log.Info("Timeout %s\n", c.RemoteAddr().String())
+				// operations
+				var result string
+				switch {
+				case strings.ToUpper(temp) == opStop:
+					log.Info("Closing connection with %s\n", c.RemoteAddr().String())
+					stopTimeout <- true
 					closeHandler <- true
-					break Timeout
-				}
+					break Loop
 
-				log.Debug("Sending timeout...")
-				_, err := c.Write([]byte(opPing + "\n"))
+				case strings.ToUpper(temp) == opPing:
+					result = opPong + crlf
+					break
+
+				case strings.ToUpper(temp) == opPong:
+					result = OK
+					break
+
+				case strings.HasPrefix(strings.ToUpper(temp), opPub):
+					// uses accumulator to get next line
+					if accumulator == "" {
+						accumulator = temp
+						continue
+					}
+					result = handlePub(c, ps, client, temp)
+
+				case strings.HasPrefix(strings.ToUpper(temp), opSub):
+					log.Debug("sub: %v", temp)
+					result = handleSub(c, ps, client, temp)
+
+				case strings.HasPrefix(strings.ToUpper(temp), opUnsub):
+					result = handleUnsub(ps, client, temp)
+
+				default:
+					result = "-ERR invalid protocol" + crlf
+				}
+				_, err := c.Write([]byte(result))
 				if err != nil {
 					log.Error("%v\n", err)
 				}
 
+				// reset accumulator
+				accumulator = ""
+
 			}
 		}
 	}()
 
+	go monitorTimeout(c, timeout, timeoutReset, stopTimeout, closeHandler)
+
 	<-closeHandler
+	ps.UnsubAll(client)
 	return
 }
 
+func monitorTimeout(c net.Conn, timeout *time.Ticker, timeoutReset chan bool, stopTimeout chan bool, closeHandler chan bool) {
+	timeoutCount := 0
+Timeout:
+	for {
+		select {
+		case <-timeoutReset:
+			timeout.Reset(ttl)
+			timeoutCount = 0
+
+		case <-stopTimeout:
+			log.Debug("Stop timeout process %s\n", c.RemoteAddr().String())
+			break Timeout
+
+		case <-timeout.C:
+			timeoutCount++
+			if timeoutCount > 2 {
+				log.Info("Timeout %s\n", c.RemoteAddr().String())
+				closeHandler <- true
+				break Timeout
+			}
+
+			_, err := c.Write([]byte(opPing + crlf))
+			if err != nil {
+				log.Error("%v\n", err)
+			}
+
+		}
+	}
+}
+
+func read(c net.Conn, buffer []byte, dataCh chan string) {
+	accumulator := ""
+	for {
+		n, err := c.Read(buffer)
+		if err != nil {
+			return
+		}
+
+		messages := strings.Split(accumulator+string(buffer[:n]), crlf)
+		accumulator = ""
+
+		if !strings.HasSuffix(string(buffer[:n]), crlf) {
+			accumulator = messages[len(messages)-1]
+			messages = messages[:len(messages)-1]
+		}
+
+		for _, msg := range messages {
+			dataCh <- msg
+		}
+	}
+}
+
 func handlePub(c net.Conn, ps *pubsub.PubSub, client string, received string) string {
-	result := "+OK\n"
-	args := strings.Split(received, " ")
+	// default result
+	result := OK
+
+	// parse
+	parts := strings.Split(received, crlf)
+	args := strings.Split(parts[0], space)
+	msg := parts[1]
+
 	if len(args) < 2 || len(args) > 3 {
 		return "-ERR should be PUB <subject> [reply-to]\n"
 	}
-	msg, err := bufio.NewReader(c).ReadString('\n')
-	if err != nil {
-		return fmt.Sprintf("-ERR %v\n", err)
-	}
 
 	opts := make([]pubsub.PubOpt, 0)
+	// subscribe for reply
 	if len(args) == 3 {
 		reply := args[2]
-		err := ps.Subscribe(reply, client, -1, func(msg pubsub.Message) {
+		err := ps.Subscribe(reply, client, func(msg pubsub.Message) {
 
 			result = fmt.Sprintf("MSG %s %s\r\n%v\r\n", msg.Subject, msg.Reply, msg.Value)
-
+			log.Debug("pub sending %s", result)
 			_, err := c.Write([]byte(result))
 			if err != nil {
 				log.Error("%v\n", err)
@@ -157,7 +210,8 @@ func handlePub(c net.Conn, ps *pubsub.PubSub, client string, received string) st
 		opts = append(opts, pubsub.WithReply(reply))
 	}
 
-	err = ps.Publish(args[1], msg[:len(msg)-2], opts...)
+	// dispatch
+	err := ps.Publish(args[1], msg, opts...)
 	if err != nil {
 		return fmt.Sprintf("-ERR %v\n", err)
 	}
@@ -166,14 +220,17 @@ func handlePub(c net.Conn, ps *pubsub.PubSub, client string, received string) st
 }
 
 func handleUnsub(ps *pubsub.PubSub, client string, received string) string {
-	result := "+OK\n"
+	// default result
+	result := OK
 
-	args := strings.Split(received, " ")
+	// parse
+	args := strings.Split(received, space)
 	if len(args) != 3 {
 		return "-ERR should be UNSUB <subject> <id>\n"
 	}
 	id, _ := strconv.Atoi(args[2])
 
+	// dispatch
 	err := ps.Unsubscribe(args[1], client, id)
 	if err != nil {
 		return fmt.Sprintf("-ERR %v\n", err)
@@ -182,9 +239,11 @@ func handleUnsub(ps *pubsub.PubSub, client string, received string) string {
 }
 
 func handleSub(c net.Conn, ps *pubsub.PubSub, client string, received string) string {
-	result := "+OK\n"
+	// default result
+	result := OK
 
-	args := strings.Split(received, " ")
+	// parse
+	args := strings.Split(received, space)
 	if len(args) < 3 || len(args) > 5 {
 		return "-ERR should be SUB <subject> <id> [max-msg] [group]\n"
 	}
@@ -200,10 +259,11 @@ func handleSub(c net.Conn, ps *pubsub.PubSub, client string, received string) st
 		group := args[4]
 		opts = append(opts, pubsub.WithGroup(group))
 	}
+	opts = append(opts, pubsub.WithID(id))
 
-	err := ps.Subscribe(args[1], client, id, func(msg pubsub.Message) {
-		result = fmt.Sprintf("MSG %s %d %s\r\n%v\r\n", msg.Subject, id, msg.Reply, msg.Value)
-		_, err := c.Write([]byte(result))
+	// dispatch
+	err := ps.Subscribe(args[1], client, func(msg pubsub.Message) {
+		err := sendMsg(c, id, msg)
 		if err != nil {
 			log.Error("%v\n", err)
 		}
@@ -213,4 +273,14 @@ func handleSub(c net.Conn, ps *pubsub.PubSub, client string, received string) st
 	}
 
 	return result
+}
+
+func sendMsg(conn net.Conn, id int, msg pubsub.Message) error {
+	result := fmt.Sprintf("MSG %s %d %s\r\n%v\r\n", msg.Subject, id, msg.Reply, msg.Value)
+	log.Debug("sub sending %s", result)
+	_, err := conn.Write([]byte(result))
+	if err != nil {
+		return err
+	}
+	return nil
 }

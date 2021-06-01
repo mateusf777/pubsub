@@ -43,7 +43,7 @@ func TestPublishWithoutSub(t *testing.T) {
 func TestSubscribe(t *testing.T) {
 	ps := NewPubSub()
 
-	err := ps.Subscribe("test", "client", 1, func(msg Message) {
+	err := ps.Subscribe("test", "client", func(msg Message) {
 		t.Logf("%v", msg)
 	})
 	if err != nil {
@@ -62,7 +62,7 @@ func TestSubscribe(t *testing.T) {
 func TestReceiveMessage(t *testing.T) {
 	ps := NewPubSub()
 	received := false
-	err := ps.Subscribe("test", "client", 1, func(msg Message) {
+	err := ps.Subscribe("test", "client", func(msg Message) {
 		received = true
 		if msg.Subject != "test" || msg.Value != "test" {
 			t.Errorf("the message was not what the expected, %v", msg)

@@ -20,13 +20,13 @@ func Start(address string) {
 	}
 	defer l.Close()
 
-	go AcceptClients(l)
+	go acceptClients(l)
 
 	log.Info("PubSub accepting connections at %s", address)
-	Wait()
+	wait()
 }
 
-func Wait() {
+func wait() {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	<-sigs
@@ -34,7 +34,7 @@ func Wait() {
 	log.Info("PubSub stop")
 }
 
-func AcceptClients(l net.Listener) {
+func acceptClients(l net.Listener) {
 	ps := pubsub.NewPubSub()
 	defer ps.Stop()
 

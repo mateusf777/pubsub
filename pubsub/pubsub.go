@@ -99,8 +99,14 @@ func WithGroup(group string) SubOpt {
 	}
 }
 
+func WithID(id int) SubOpt {
+	return func(hs *HandlerSubject) {
+		hs.id = id
+	}
+}
+
 // Subscribe register the subject subscribers received in a SUB op
-func (ps *PubSub) Subscribe(subject string, client string, id int, handler Handler, opts ...SubOpt) error {
+func (ps *PubSub) Subscribe(subject string, client string, handler Handler, opts ...SubOpt) error {
 	if ps.handlersMap == nil {
 		return fmt.Errorf("the pubsub was not correctly initiated, the list of handlers is nil")
 	}
@@ -114,7 +120,6 @@ func (ps *PubSub) Subscribe(subject string, client string, id int, handler Handl
 
 	hs := HandlerSubject{
 		client:  client,
-		id:      id,
 		subject: subject,
 		handler: handler,
 	}
@@ -155,6 +160,19 @@ func (ps *PubSub) Unsubscribe(subject string, client string, id int) error {
 	handlers[remove] = handlers[len(handlers)-1]
 	ps.handlersMap[subject] = handlers[:len(handlers)-1]
 	return nil
+}
+
+func (ps *PubSub) UnsubAll(client string) {
+	for subject, handlers := range ps.handlersMap {
+		size := len(handlers)
+		for i := 0; i < size; i++ {
+			if handlers[i].client == client {
+				handlers[i] = handlers[size-1]
+				size--
+			}
+		}
+		ps.handlersMap[subject] = handlers[:size]
+	}
 }
 
 // run is the event loop that routes messages from PUB op to handlers registered by received SUB ops

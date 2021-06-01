@@ -5,6 +5,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/mateusf777/pubsub/log"
+
 	"github.com/mateusf777/pubsub/server"
 )
 
@@ -14,6 +16,7 @@ const defaultAddress = "127.0.0.1:9999"
 
 func main() {
 	rand.Seed(time.Now().Unix())
+	log.SetLevel(log.INFO)
 
 	address := os.Getenv("PUBSUB_ADDRESS")
 	if address == "" {
