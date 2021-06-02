@@ -21,8 +21,6 @@ const (
 	opMsg  = "MSG"
 )
 
-const closeErr = "use of closed network connection"
-
 type pubSub struct {
 	msgCh       chan pubsub.Message
 	nextSub     int
@@ -66,7 +64,7 @@ func Connect(address string) (*Conn, error) {
 
 func (c *Conn) Close() {
 	result := fmt.Sprintf("%v\r\n", "stop")
-	//log.Debug(result)
+	log.Debug(result)
 	_, err := c.conn.Write([]byte(result))
 	if err != nil {
 		log.Error("%v", err)
@@ -75,7 +73,7 @@ func (c *Conn) Close() {
 
 func (c *Conn) Publish(subject string, msg []byte) error {
 	result := fmt.Sprintf("PUB %s\r\n%v\r\n", subject, string(msg))
-	//log.Debug(result)
+	log.Debug(result)
 	_, err := c.conn.Write([]byte(result))
 	if err != nil {
 		return err
@@ -88,7 +86,7 @@ func (c *Conn) Subscribe(subject string, handle pubsub.Handler) error {
 	c.ps.nextSub++
 	c.ps.subscribers[c.ps.nextSub] = handle
 	result := fmt.Sprintf("SUB %s %d\r\n", subject, c.ps.nextSub)
-	//log.Debug(result)
+	log.Debug(result)
 	_, err := c.conn.Write([]byte(result))
 	return err
 }
@@ -120,20 +118,20 @@ func handleConnection(c net.Conn, ps *pubSub) {
 					if err != nil {
 						return
 					}
-					//log.Debug("buffer :" + string(buffer[:n]))
+					log.Debug("buffer :" + string(buffer[:n]))
 
 					messages := strings.Split(accumulator+string(buffer[:n]), "\r\n")
 					accumulator = ""
 
-					//log.Debug("messages :" + string(buffer[:n]))
+					log.Debug("messages :" + string(buffer[:n]))
 					if !strings.HasSuffix(string(buffer[:n]), "\r\n") {
 						accumulator = messages[len(messages)-1]
 						messages = messages[:len(messages)-1]
 					}
 
-					//log.Debug("messages %v\n", messages)
+					log.Debug("messages %v\n", messages)
 					for _, msg := range messages {
-						//log.Debug("pushing: %s", msg)
+						log.Debug("pushing: %s", msg)
 						dataCh <- msg
 					}
 				}
@@ -141,9 +139,8 @@ func handleConnection(c net.Conn, ps *pubSub) {
 
 			accumulator := ""
 			for netData := range dataCh {
-				//log.Debug("Received %v", netData)
+				log.Debug("Received %v", netData)
 
-				//log.Debug("Resetting timeout...")
 				timeout.Reset(ttl)
 				timeoutCount = 0
 
@@ -173,12 +170,12 @@ func handleConnection(c net.Conn, ps *pubSub) {
 					break
 
 				case strings.HasPrefix(strings.ToUpper(temp), opMsg):
-					//log.Debug("in opMsg...")
+					log.Debug("in opMsg...")
 					if accumulator == "" {
 						accumulator = temp
 						continue
 					}
-					//log.Debug("calling handleMsg")
+					log.Debug("calling handleMsg")
 					handleMsg(ps, temp)
 
 				default:
@@ -215,7 +212,7 @@ func handleConnection(c net.Conn, ps *pubSub) {
 					break Timeout
 				}
 
-				//log.Debug("Sending timeout...")
+				log.Debug("Sending timeout...")
 				_, err := c.Write([]byte(opPing + "\r\n"))
 				if err != nil {
 					log.Error("%v\n", err)
@@ -230,8 +227,7 @@ func handleConnection(c net.Conn, ps *pubSub) {
 }
 
 func handleMsg(ps *pubSub, received string) {
-	//log.Debug("handleMsg, %s", received)
-	//result := "+OK\n"
+	log.Debug("handleMsg, %s", received)
 	parts := strings.Split(received, "\r\n")
 	args := strings.Split(parts[0], " ")
 	msg := parts[1]

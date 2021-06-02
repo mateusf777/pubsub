@@ -3,6 +3,7 @@ package pubsub
 import (
 	"fmt"
 	"math/rand"
+	"sync"
 
 	"github.com/mateusf777/pubsub/log"
 )
@@ -10,8 +11,8 @@ import (
 // PubSub represents a message router for handling the operations PUB, SUB and UNSUB
 type PubSub struct {
 	msgCh       chan Message
-	handlersMap map[string][]HandlerSubject
-	groupsMap   map[string][]HandlerSubject
+	handlersMap *sync.Map //map[string][]HandlerSubject
+	groupsMap   *sync.Map //map[string][]HandlerSubject
 	running     bool
 }
 
@@ -40,7 +41,7 @@ type Handler func(msg Message)
 func NewPubSub() *PubSub {
 	ps := PubSub{
 		msgCh:       make(chan Message),
-		handlersMap: make(map[string][]HandlerSubject, 0),
+		handlersMap: new(sync.Map),
 		running:     false,
 	}
 	go ps.run()
@@ -114,8 +115,8 @@ func (ps *PubSub) Subscribe(subject string, client string, handler Handler, opts
 		return fmt.Errorf("invalid parameters, both subject and handler need to be given")
 	}
 
-	if _, ok := ps.handlersMap[subject]; !ok {
-		ps.handlersMap[subject] = make([]HandlerSubject, 0)
+	if _, ok := ps.handlersMap.Load(subject); !ok {
+		ps.handlersMap.Store(subject, make([]HandlerSubject, 0))
 	}
 
 	hs := HandlerSubject{
@@ -127,9 +128,9 @@ func (ps *PubSub) Subscribe(subject string, client string, handler Handler, opts
 		opt(&hs)
 	}
 
-	handlers := ps.handlersMap[subject]
-	handlers = append(handlers, hs)
-	ps.handlersMap[subject] = handlers
+	handlers, _ := ps.handlersMap.Load(subject)
+	handlers = append(handlers.([]HandlerSubject), hs)
+	ps.handlersMap.Store(subject, handlers)
 	return nil
 }
 
@@ -141,13 +142,13 @@ func (ps *PubSub) Unsubscribe(subject string, client string, id int) error {
 	if subject == "" {
 		return fmt.Errorf("invalid parameters, both subject and handler need to be given")
 	}
-	if _, ok := ps.handlersMap[subject]; !ok {
+	if _, ok := ps.handlersMap.Load(subject); !ok {
 		return fmt.Errorf("there's no subscribers for subject[%s]", subject)
 	}
 
-	handlers := ps.handlersMap[subject]
+	handlers, _ := ps.handlersMap.Load(subject)
 	remove := -1
-	for i, hs := range handlers {
+	for i, hs := range handlers.([]HandlerSubject) {
 		if hs.client == client && hs.id == id {
 			remove = i
 			break
@@ -157,13 +158,15 @@ func (ps *PubSub) Unsubscribe(subject string, client string, id int) error {
 		return fmt.Errorf("there's no subscriber for subject[%s], id[%d]", subject, id)
 	}
 
-	handlers[remove] = handlers[len(handlers)-1]
-	ps.handlersMap[subject] = handlers[:len(handlers)-1]
+	hs := handlers.([]HandlerSubject)
+	hs[remove] = hs[len(hs)-1]
+	ps.handlersMap.Store(subject, hs[:len(hs)-1])
 	return nil
 }
 
 func (ps *PubSub) UnsubAll(client string) {
-	for subject, handlers := range ps.handlersMap {
+	ps.handlersMap.Range(func(subject, hs interface{}) bool {
+		handlers := hs.([]HandlerSubject)
 		size := len(handlers)
 		for i := 0; i < size; i++ {
 			if handlers[i].client == client {
@@ -171,8 +174,9 @@ func (ps *PubSub) UnsubAll(client string) {
 				size--
 			}
 		}
-		ps.handlersMap[subject] = handlers[:size]
-	}
+		ps.handlersMap.Store(subject, handlers[:size])
+		return true
+	})
 }
 
 // run is the event loop that routes messages from PUB op to handlers registered by received SUB ops
@@ -193,7 +197,7 @@ func (ps *PubSub) run() {
 }
 
 func (ps *PubSub) routeAndClean(msg Message) {
-	subHandlers := ps.handlersMap[msg.Subject]
+	hs, _ := ps.handlersMap.Load(msg.Subject)
 
 	// handlers with countMsg == maxMsg
 	finishedHandlers := make([]int, 0)
@@ -201,6 +205,7 @@ func (ps *PubSub) routeAndClean(msg Message) {
 	// handlers in a group to be rand load balanced
 	groups := make(map[string][]HandlerSubject)
 
+	subHandlers := hs.([]HandlerSubject)
 	for i, hs := range subHandlers {
 		// prepare cleaning
 		if hs.maxMsg > 0 {
@@ -237,13 +242,13 @@ func (ps *PubSub) routeAndClean(msg Message) {
 	// execute cleaning
 	for _, i := range finishedHandlers {
 		subHandlers[i] = subHandlers[len(subHandlers)-1]
-		ps.handlersMap[msg.Subject] = subHandlers[:len(subHandlers)-1]
+		ps.handlersMap.Store(msg.Subject, subHandlers[:len(subHandlers)-1])
 	}
 }
 
 func (ps *PubSub) hasSubscriber(subject string) bool {
-	if handlers, ok := ps.handlersMap[subject]; ok {
-		return len(handlers) > 0
+	if handlers, ok := ps.handlersMap.Load(subject); ok {
+		return len(handlers.([]HandlerSubject)) > 0
 	}
 	return false
 }

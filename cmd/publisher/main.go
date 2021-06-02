@@ -5,15 +5,15 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/mateusf777/pubsub/client"
 	"github.com/mateusf777/pubsub/log"
 )
 
 func main() {
+	log.SetLevel(log.INFO)
 
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 8; i++ {
 		go send()
 	}
 
@@ -29,9 +29,8 @@ func send() {
 	defer conn.Close()
 
 	count := 0
-	ticker := time.NewTicker(time.Microsecond)
 	log.Info("start sending")
-	for range ticker.C {
+	for {
 		count++
 		msg := fmt.Sprintf("this is a longer test with count: %d", count)
 		err := conn.Publish("test", []byte(msg))
@@ -39,7 +38,7 @@ func send() {
 			log.Error("%v", err)
 			break
 		}
-		if count >= 500000 {
+		if count >= 1000000 {
 			break
 		}
 	}
