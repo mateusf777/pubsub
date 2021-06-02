@@ -43,8 +43,9 @@ func (ps *pubSub) publish(id int, msg pubsub.Message) error {
 }
 
 type Conn struct {
-	conn net.Conn
-	ps   *pubSub
+	conn      net.Conn
+	ps        *pubSub
+	nextReply int
 }
 
 func Connect(address string) (*Conn, error) {
@@ -89,6 +90,43 @@ func (c *Conn) Subscribe(subject string, handle pubsub.Handler) error {
 	log.Debug(result)
 	_, err := c.conn.Write([]byte(result))
 	return err
+}
+
+func (c *Conn) Request(subject string, msg []byte) (pubsub.Message, error) {
+	resCh := make(chan pubsub.Message)
+	c.ps.nextSub++
+	c.ps.subscribers[c.ps.nextSub] = func(msg pubsub.Message) {
+		log.Info("received %v", msg)
+		resCh <- msg
+	}
+	c.nextReply++
+	reply := "REPLY." + strconv.Itoa(c.nextReply)
+
+	result := fmt.Sprintf("SUB %s %d\r\n", reply, c.ps.nextSub)
+	log.Debug(result)
+	_, err := c.conn.Write([]byte(result))
+	if err != nil {
+		return pubsub.Message{}, err
+	}
+
+	if msg == nil {
+		msg = []byte("_")
+	}
+	log.Info(reply)
+	result = fmt.Sprintf("PUB %s %s\r\n%v\r\n", subject, reply, string(msg))
+	log.Debug(result)
+	_, err = c.conn.Write([]byte(result))
+	if err != nil {
+		return pubsub.Message{}, err
+	}
+
+	timeout := time.NewTimer(10 * time.Minute)
+	select {
+	case <-timeout.C:
+		return pubsub.Message{}, fmt.Errorf("timeout")
+	case r := <-resCh:
+		return r, nil
+	}
 }
 
 func handleConnection(c net.Conn, ps *pubSub) {
