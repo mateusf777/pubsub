@@ -50,7 +50,7 @@ func TestSubscribe(t *testing.T) {
 		t.Errorf("should not return an error, %+v", err)
 	}
 
-	if len(ps.handlersMap) == 0 {
+	if _, ok := ps.handlersMap.Load("test"); !ok {
 		t.Errorf("the subscriber was not correctly persisted")
 	}
 

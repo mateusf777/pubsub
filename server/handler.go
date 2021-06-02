@@ -5,31 +5,12 @@ import (
 	"net"
 	"strconv"
 	"strings"
-	"time"
+
+	psnet "github.com/mateusf777/pubsub/net"
 
 	"github.com/mateusf777/pubsub/log"
-
 	"github.com/mateusf777/pubsub/pubsub"
 )
-
-const ttl = 5 * time.Minute
-
-const (
-	opStop  = "STOP"
-	opPub   = "PUB"
-	opSub   = "SUB"
-	opUnsub = "UNSUB"
-	opPong  = "PONG"
-	opPing  = "PING"
-)
-
-const (
-	crlf  = "\r\n"
-	space = " "
-	OK    = "+OK" + crlf
-)
-
-const closeErr = "use of closed network connection"
 
 func handleConnection(c net.Conn, ps *pubsub.PubSub) {
 	defer func(c net.Conn) {
@@ -46,7 +27,6 @@ func handleConnection(c net.Conn, ps *pubsub.PubSub) {
 	log.Info("Serving %s\n", c.RemoteAddr().String())
 	client := c.RemoteAddr().String()
 
-	timeout := time.NewTicker(ttl)
 	timeoutReset := make(chan bool)
 
 	buffer := make([]byte, 1024)
@@ -55,56 +35,54 @@ func handleConnection(c net.Conn, ps *pubsub.PubSub) {
 	go func() {
 	Loop:
 		for {
-			go read(c, buffer, dataCh)
+			go psnet.Read(c, buffer, dataCh)
 
 			// dispatch
-			accumulator := ""
+			accumulator := psnet.Empty
 			for netData := range dataCh {
 				timeoutReset <- true
 
 				temp := strings.TrimSpace(netData)
-				if temp == "" {
+				if temp == psnet.Empty {
 					continue
 				}
-
-				if accumulator != "" {
-					temp = accumulator + crlf + temp
+				if accumulator != psnet.Empty {
+					temp = accumulator + psnet.CRLF + temp
 				}
 
-				// operations
 				var result string
 				switch {
-				case strings.ToUpper(temp) == opStop:
+				case strings.ToUpper(temp) == psnet.OpStop:
 					log.Info("Closing connection with %s\n", c.RemoteAddr().String())
 					stopTimeout <- true
 					closeHandler <- true
 					break Loop
 
-				case strings.ToUpper(temp) == opPing:
-					result = opPong + crlf
+				case strings.ToUpper(temp) == psnet.OpPing:
+					result = psnet.OpPong + psnet.CRLF
 					break
 
-				case strings.ToUpper(temp) == opPong:
-					result = OK
+				case strings.ToUpper(temp) == psnet.OpPong:
+					result = psnet.OK
 					break
 
-				case strings.HasPrefix(strings.ToUpper(temp), opPub):
+				case strings.HasPrefix(strings.ToUpper(temp), psnet.OpPub):
 					// uses accumulator to get next line
-					if accumulator == "" {
+					if accumulator == psnet.Empty {
 						accumulator = temp
 						continue
 					}
 					result = handlePub(c, ps, client, temp)
 
-				case strings.HasPrefix(strings.ToUpper(temp), opSub):
+				case strings.HasPrefix(strings.ToUpper(temp), psnet.OpSub):
 					log.Debug("sub: %v", temp)
 					result = handleSub(c, ps, client, temp)
 
-				case strings.HasPrefix(strings.ToUpper(temp), opUnsub):
+				case strings.HasPrefix(strings.ToUpper(temp), psnet.OpUnsub):
 					result = handleUnsub(ps, client, temp)
 
 				default:
-					result = "-ERR invalid protocol" + crlf
+					result = "-ERR invalid protocol" + psnet.CRLF
 				}
 				_, err := c.Write([]byte(result))
 				if err != nil {
@@ -112,78 +90,25 @@ func handleConnection(c net.Conn, ps *pubsub.PubSub) {
 				}
 
 				// reset accumulator
-				accumulator = ""
-
+				accumulator = psnet.Empty
 			}
 		}
 	}()
 
-	go monitorTimeout(c, timeout, timeoutReset, stopTimeout, closeHandler)
+	go psnet.MonitorTimeout(c, timeoutReset, stopTimeout, closeHandler)
 
 	<-closeHandler
 	ps.UnsubAll(client)
 	return
 }
 
-func monitorTimeout(c net.Conn, timeout *time.Ticker, timeoutReset chan bool, stopTimeout chan bool, closeHandler chan bool) {
-	timeoutCount := 0
-Timeout:
-	for {
-		select {
-		case <-timeoutReset:
-			timeout.Reset(ttl)
-			timeoutCount = 0
-
-		case <-stopTimeout:
-			log.Debug("Stop timeout process %s\n", c.RemoteAddr().String())
-			break Timeout
-
-		case <-timeout.C:
-			timeoutCount++
-			if timeoutCount > 2 {
-				log.Info("Timeout %s\n", c.RemoteAddr().String())
-				closeHandler <- true
-				break Timeout
-			}
-
-			_, err := c.Write([]byte(opPing + crlf))
-			if err != nil {
-				log.Error("%v\n", err)
-			}
-
-		}
-	}
-}
-
-func read(c net.Conn, buffer []byte, dataCh chan string) {
-	accumulator := ""
-	for {
-		n, err := c.Read(buffer)
-		if err != nil {
-			return
-		}
-
-		messages := strings.Split(accumulator+string(buffer[:n]), crlf)
-		accumulator = ""
-
-		if !strings.HasSuffix(string(buffer[:n]), crlf) {
-			accumulator = messages[len(messages)-1]
-			messages = messages[:len(messages)-1]
-		}
-
-		for _, msg := range messages {
-			dataCh <- msg
-		}
-	}
-}
-
 func handlePub(c net.Conn, ps *pubsub.PubSub, client string, received string) string {
 	// default result
-	result := OK
+	result := psnet.OK
 
 	// parse
-	parts := strings.Split(received, crlf)
-	args := strings.Split(parts[0], space)
+	parts := strings.Split(received, psnet.CRLF)
+	args := strings.Split(parts[0], psnet.Space)
 	msg := parts[1]
 
 	if len(args) < 2 || len(args) > 3 {
@@ -221,10 +146,10 @@ func handlePub(c net.Conn, ps *pubsub.PubSub, client string, received string) st
 
 func handleUnsub(ps *pubsub.PubSub, client string, received string) string {
 	// default result
-	result := OK
+	result := psnet.OK
 
 	// parse
-	args := strings.Split(received, space)
+	args := strings.Split(received, psnet.Space)
 	if len(args) != 3 {
 		return "-ERR should be UNSUB <subject> <id>\n"
 	}
@@ -240,10 +165,10 @@ func handleUnsub(ps *pubsub.PubSub, client string, received string) string {
 
 func handleSub(c net.Conn, ps *pubsub.PubSub, client string, received string) string {
 	// default result
-	result := OK
+	result := psnet.OK
 
 	// parse
-	args := strings.Split(received, space)
+	args := strings.Split(received, psnet.Space)
 	if len(args) < 3 || len(args) > 5 {
 		return "-ERR should be SUB <subject> <id> [max-msg] [group]\n"
 	}

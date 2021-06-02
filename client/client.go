@@ -8,17 +8,8 @@ import (
 	"time"
 
 	"github.com/mateusf777/pubsub/log"
+	psnet "github.com/mateusf777/pubsub/net"
 	"github.com/mateusf777/pubsub/pubsub"
-)
-
-const ttl = 5 * time.Minute
-
-const (
-	opOK   = "+OK"
-	opERR  = "-ERR"
-	opPong = "PONG"
-	opPing = "PING"
-	opMsg  = "MSG"
 )
 
 type pubSub struct {
@@ -141,75 +132,48 @@ func handleConnection(c net.Conn, ps *pubSub) {
 	closeHandler := make(chan bool)
 	stopTimeout := make(chan bool)
 
-	timeout := time.NewTicker(ttl)
-	timeoutCount := 0
+	timeoutReset := make(chan bool)
 
 	buffer := make([]byte, 1024)
 	dataCh := make(chan string, 10)
 
 	go func() {
 		for {
-			go func() {
-				accumulator := ""
-				for {
-					n, err := c.Read(buffer)
-					if err != nil {
-						return
-					}
-					log.Debug("buffer :" + string(buffer[:n]))
+			go psnet.Read(c, buffer, dataCh)
 
-					messages := strings.Split(accumulator+string(buffer[:n]), "\r\n")
-					accumulator = ""
-
-					log.Debug("messages :" + string(buffer[:n]))
-					if !strings.HasSuffix(string(buffer[:n]), "\r\n") {
-						accumulator = messages[len(messages)-1]
-						messages = messages[:len(messages)-1]
-					}
-
-					log.Debug("messages %v\n", messages)
-					for _, msg := range messages {
-						log.Debug("pushing: %s", msg)
-						dataCh <- msg
-					}
-				}
-			}()
-
-			accumulator := ""
+			accumulator := psnet.Empty
 			for netData := range dataCh {
 				log.Debug("Received %v", netData)
-
-				timeout.Reset(ttl)
-				timeoutCount = 0
+				timeoutReset <- true
 
 				temp := strings.TrimSpace(netData)
-				if temp == "" {
+				if temp == psnet.Empty {
 					continue
 				}
 
-				if accumulator != "" {
-					temp = accumulator + "\r\n" + temp
+				if accumulator != psnet.Empty {
+					temp = accumulator + psnet.CRLF + temp
 				}
 
 				var result string
 				switch {
-				case strings.ToUpper(temp) == opPing:
-					result = opPong + "\n"
+				case strings.ToUpper(temp) == psnet.OpPing:
+					result = psnet.OpPong + "\n"
 					break
 
-				case strings.ToUpper(temp) == opPong:
+				case strings.ToUpper(temp) == psnet.OpPong:
 					break
 
-				case strings.ToUpper(temp) == opOK:
+				case strings.ToUpper(temp) == psnet.OpOK:
 					break
 
-				case strings.ToUpper(temp) == opERR:
+				case strings.ToUpper(temp) == psnet.OpERR:
 					log.Error(temp)
 					break
 
-				case strings.HasPrefix(strings.ToUpper(temp), opMsg):
+				case strings.HasPrefix(strings.ToUpper(temp), psnet.OpMsg):
 					log.Debug("in opMsg...")
-					if accumulator == "" {
+					if accumulator == psnet.Empty {
 						accumulator = temp
 						continue
 					}
@@ -217,48 +181,24 @@ func handleConnection(c net.Conn, ps *pubSub) {
 					handleMsg(ps, temp)
 
 				default:
-					result = ""
+					result = psnet.Empty
 				}
 
-				if result != "" {
+				if result != psnet.Empty {
 					_, err := c.Write([]byte(result))
 					if err != nil {
 						log.Error("%v\n", err)
 					}
 				}
 
-				accumulator = ""
+				accumulator = psnet.Empty
 
 			}
 
 		}
 	}()
 
-	go func() {
-	Timeout:
-		for {
-			select {
-			case <-stopTimeout:
-				log.Debug("Stop timeout process %s\n", c.RemoteAddr().String())
-				break Timeout
-
-			case <-timeout.C:
-				timeoutCount++
-				if timeoutCount > 2 {
-					log.Info("Timeout %s\n", c.RemoteAddr().String())
-					closeHandler <- true
-					break Timeout
-				}
-
-				log.Debug("Sending timeout...")
-				_, err := c.Write([]byte(opPing + "\r\n"))
-				if err != nil {
-					log.Error("%v\n", err)
-				}
-
-			}
-		}
-	}()
+	go psnet.MonitorTimeout(c, timeoutReset, stopTimeout, closeHandler)
 
 	<-closeHandler
 	return
@@ -266,8 +206,8 @@ func handleConnection(c net.Conn, ps *pubSub) {
 
 func handleMsg(ps *pubSub, received string) {
 	log.Debug("handleMsg, %s", received)
-	parts := strings.Split(received, "\r\n")
-	args := strings.Split(parts[0], " ")
+	parts := strings.Split(received, psnet.CRLF)
+	args := strings.Split(parts[0], psnet.Space)
 	msg := parts[1]
 	if len(args) < 3 || len(args) > 4 {
 		return //"-ERR should be MSG <subject> <id> [reply-to]\n"
@@ -290,6 +230,4 @@ func handleMsg(ps *pubSub, received string) {
 	if err != nil {
 		return // fmt.Sprintf("-ERR %v\n", err)
 	}
-
-	//return result
 }

@@ -5,6 +5,8 @@ import (
 	"os"
 	"time"
 
+	psnet "github.com/mateusf777/pubsub/net"
+
 	"github.com/mateusf777/pubsub/log"
 
 	"github.com/mateusf777/pubsub/server"
@@ -19,7 +21,7 @@ func main() {
 	log.SetLevel(log.INFO)
 
 	address := os.Getenv("PUBSUB_ADDRESS")
-	if address == "" {
+	if address == psnet.Empty {
 		address = defaultAddress
 	}
 

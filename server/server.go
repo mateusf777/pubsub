@@ -8,6 +8,8 @@ import (
 	"strings"
 	"syscall"
 
+	psnet "github.com/mateusf777/pubsub/net"
+
 	"github.com/mateusf777/pubsub/log"
 	"github.com/mateusf777/pubsub/pubsub"
 )
@@ -41,7 +43,7 @@ func acceptClients(l net.Listener) {
 	for {
 		c, err := l.Accept()
 		if err != nil {
-			if strings.Contains(err.Error(), closeErr) {
+			if strings.Contains(err.Error(), psnet.CloseErr) {
 				return
 			}
 			log.Error("%v\n", err)
