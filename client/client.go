@@ -87,7 +87,7 @@ func (c *Conn) Request(subject string, msg []byte) (pubsub.Message, error) {
 	resCh := make(chan pubsub.Message)
 	c.ps.nextSub++
 	c.ps.subscribers[c.ps.nextSub] = func(msg pubsub.Message) {
-		log.Info("received %v", msg)
+		log.Debug("received %v", msg)
 		resCh <- msg
 	}
 	c.nextReply++
@@ -103,7 +103,7 @@ func (c *Conn) Request(subject string, msg []byte) (pubsub.Message, error) {
 	if msg == nil {
 		msg = []byte("_")
 	}
-	log.Info(reply)
+	log.Debug(reply)
 	result = fmt.Sprintf("PUB %s %s\r\n%v\r\n", subject, reply, string(msg))
 	log.Debug(result)
 	_, err = c.conn.Write([]byte(result))

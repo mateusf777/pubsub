@@ -1,12 +1,8 @@
 package server
 
 import (
-	"fmt"
 	"net"
-	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 
 	psnet "github.com/mateusf777/pubsub/net"
 
@@ -25,15 +21,8 @@ func Start(address string) {
 	go acceptClients(l)
 
 	log.Info("PubSub accepting connections at %s", address)
-	wait()
-}
-
-func wait() {
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-	<-sigs
-	fmt.Println()
-	log.Info("PubSub stop")
+	psnet.Wait()
+	log.Info("Stopping PubSub")
 }
 
 func acceptClients(l net.Listener) {

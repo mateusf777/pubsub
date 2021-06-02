@@ -15,13 +15,12 @@ func main() {
 	}
 	defer conn.Close()
 
-	log.Info("start sending")
+	log.Info("request time")
 	resp, err := conn.Request("time", nil)
 	if err != nil {
 		log.Error("%v", err)
 		return
 	}
 
-	log.Info("%v", resp.Value)
-	log.Info("finish sending")
+	log.Info("now: %v", resp.Value)
 }

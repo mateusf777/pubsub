@@ -2,22 +2,26 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
+
+	psnet "github.com/mateusf777/pubsub/net"
 
 	"github.com/mateusf777/pubsub/client"
 	"github.com/mateusf777/pubsub/log"
 )
 
+const (
+	routines = 8
+	messages = 1000000
+)
+
 func main() {
 	log.SetLevel(log.INFO)
 
-	for i := 0; i < 8; i++ {
+	for i := 0; i < routines; i++ {
 		go send()
 	}
 
-	wait()
+	psnet.Wait()
 }
 
 func send() {
@@ -38,16 +42,9 @@ func send() {
 			log.Error("%v", err)
 			break
 		}
-		if count >= 1000000 {
+		if count >= messages {
 			break
 		}
 	}
 	log.Info("finish sending")
-}
-
-func wait() {
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-	<-sigs
-	fmt.Println()
 }

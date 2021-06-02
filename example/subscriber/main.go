@@ -1,12 +1,10 @@
 package main
 
 import (
-	"fmt"
-	"os"
-	"os/signal"
 	"strconv"
-	"syscall"
 	"time"
+
+	psnet "github.com/mateusf777/pubsub/net"
 
 	"github.com/mateusf777/pubsub/client"
 	"github.com/mateusf777/pubsub/log"
@@ -62,14 +60,6 @@ func main() {
 		return
 	}
 
-	wait()
+	psnet.Wait()
 	log.Debug("Closing")
-	return
-}
-
-func wait() {
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-	<-sigs
-	fmt.Println()
 }

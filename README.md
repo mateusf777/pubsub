@@ -10,11 +10,26 @@ The protocol here is not my idea. Although, I have not copied the code, I have u
 I highly recommend [nats](https://nats.io) if you need a connective technology.
 
 ### Build
-`go build -o ps-server`
+```
+go build -o ps-server         // build the pubsub server
+go build ./example/subscriber // build the subscriber example
+go build ./example/publisher  // build the publisher example
+go build ./example/request    // build the request example
+```
 
 ### Run
 
 `./ps-server`
+
+If you want to run the examples, first start subscriber in a different terminal, then the order does not matter.
+Attention!! The publisher example triggers 1000000 messages 8x concurrent as fast as it can, it will get "a bit" of cpu.
+You can adjust it in the `./example/publisher/main.go` and build it again: 
+```
+const (
+	routines = 8
+	messages = 1000000
+)
+```
 
 ### Simple subscribe/publish (for now with telnet)
 In a terminal type

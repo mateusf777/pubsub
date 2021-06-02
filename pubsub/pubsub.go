@@ -8,6 +8,8 @@ import (
 	"github.com/mateusf777/pubsub/log"
 )
 
+const noIndex = -1
+
 // PubSub represents a message router for handling the operations PUB, SUB and UNSUB
 type PubSub struct {
 	msgCh       chan Message
@@ -147,14 +149,14 @@ func (ps *PubSub) Unsubscribe(subject string, client string, id int) error {
 	}
 
 	handlers, _ := ps.handlersMap.Load(subject)
-	remove := -1
+	remove := noIndex
 	for i, hs := range handlers.([]HandlerSubject) {
 		if hs.client == client && hs.id == id {
 			remove = i
 			break
 		}
 	}
-	if remove == -1 {
+	if remove == noIndex {
 		return fmt.Errorf("there's no subscriber for subject[%s], id[%d]", subject, id)
 	}
 

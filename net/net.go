@@ -1,8 +1,12 @@
 package net
 
 import (
+	"fmt"
 	"net"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/mateusf777/pubsub/log"
@@ -83,4 +87,11 @@ Timeout:
 
 		}
 	}
+}
+
+func Wait() {
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	<-sigs
+	fmt.Println()
 }
