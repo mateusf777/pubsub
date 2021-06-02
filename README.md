@@ -22,7 +22,7 @@ go build ./example/request    // build the request example
 `./ps-server`
 
 If you want to run the examples, first start subscriber in a different terminal, then the order does not matter.
-Attention!! The publisher example triggers 1000000 messages 8x concurrent as fast as it can, it will get "a bit" of cpu.
+Attention!! The publisher example triggers 1000000 messages 8x concurrently as fast as it can, it will get "a bit" of cpu.
 You can adjust it in the `./example/publisher/main.go` and build it again: 
 ```
 const (
@@ -31,7 +31,7 @@ const (
 )
 ```
 
-### Simple subscribe/publish (for now with telnet)
+### Simple subscribe/publish - test with telnet
 In a terminal type
 ```
 telnet localhost 9999
