@@ -8,11 +8,11 @@ import (
 
 	psnet "github.com/mateusf777/pubsub/net"
 
+	"github.com/mateusf777/pubsub/domain"
 	"github.com/mateusf777/pubsub/log"
-	"github.com/mateusf777/pubsub/pubsub"
 )
 
-func handleConnection(c net.Conn, ps *pubsub.PubSub) {
+func handleConnection(c net.Conn, ps *domain.PubSub) {
 	defer func(c net.Conn) {
 		err := c.Close()
 		if err != nil {
@@ -102,7 +102,7 @@ func handleConnection(c net.Conn, ps *pubsub.PubSub) {
 	return
 }
 
-func handlePub(c net.Conn, ps *pubsub.PubSub, client string, received string) string {
+func handlePub(c net.Conn, ps *domain.PubSub, client string, received string) string {
 	// default result
 	result := psnet.OK
 
@@ -115,11 +115,11 @@ func handlePub(c net.Conn, ps *pubsub.PubSub, client string, received string) st
 		return "-ERR should be PUB <subject> [reply-to]\n"
 	}
 
-	opts := make([]pubsub.PubOpt, 0)
+	opts := make([]domain.PubOpt, 0)
 	// subscribe for reply
 	if len(args) == 3 {
 		reply := args[2]
-		err := ps.Subscribe(reply, client, func(msg pubsub.Message) {
+		err := ps.Subscribe(reply, client, func(msg domain.Message) {
 
 			result = fmt.Sprintf("MSG %s %s\r\n%v\r\n", msg.Subject, msg.Reply, msg.Value)
 			log.Debug("pub sending %s", result)
@@ -128,11 +128,11 @@ func handlePub(c net.Conn, ps *pubsub.PubSub, client string, received string) st
 				log.Error("%v\n", err)
 			}
 
-		}, pubsub.WithMaxMsg(1))
+		}, domain.WithMaxMsg(1))
 		if err != nil {
 			return fmt.Sprintf("-ERR %v\n", err)
 		}
-		opts = append(opts, pubsub.WithReply(reply))
+		opts = append(opts, domain.WithReply(reply))
 	}
 
 	// dispatch
@@ -144,7 +144,7 @@ func handlePub(c net.Conn, ps *pubsub.PubSub, client string, received string) st
 	return result
 }
 
-func handleUnsub(ps *pubsub.PubSub, client string, received string) string {
+func handleUnsub(ps *domain.PubSub, client string, received string) string {
 	// default result
 	result := psnet.OK
 
@@ -163,7 +163,7 @@ func handleUnsub(ps *pubsub.PubSub, client string, received string) string {
 	return result
 }
 
-func handleSub(c net.Conn, ps *pubsub.PubSub, client string, received string) string {
+func handleSub(c net.Conn, ps *domain.PubSub, client string, received string) string {
 	// default result
 	result := psnet.OK
 
@@ -174,20 +174,20 @@ func handleSub(c net.Conn, ps *pubsub.PubSub, client string, received string) st
 	}
 
 	id, _ := strconv.Atoi(args[2])
-	opts := make([]pubsub.SubOpt, 0)
+	opts := make([]domain.SubOpt, 0)
 
 	if len(args) == 4 {
 		maxMsg, _ := strconv.Atoi(args[3])
-		opts = append(opts, pubsub.WithMaxMsg(maxMsg))
+		opts = append(opts, domain.WithMaxMsg(maxMsg))
 	}
 	if len(args) == 5 {
 		group := args[4]
-		opts = append(opts, pubsub.WithGroup(group))
+		opts = append(opts, domain.WithGroup(group))
 	}
-	opts = append(opts, pubsub.WithID(id))
+	opts = append(opts, domain.WithID(id))
 
 	// dispatch
-	err := ps.Subscribe(args[1], client, func(msg pubsub.Message) {
+	err := ps.Subscribe(args[1], client, func(msg domain.Message) {
 		err := sendMsg(c, id, msg)
 		if err != nil {
 			log.Error("%v\n", err)
@@ -200,7 +200,7 @@ func handleSub(c net.Conn, ps *pubsub.PubSub, client string, received string) st
 	return result
 }
 
-func sendMsg(conn net.Conn, id int, msg pubsub.Message) error {
+func sendMsg(conn net.Conn, id int, msg domain.Message) error {
 	result := fmt.Sprintf("MSG %s %d %s\r\n%v\r\n", msg.Subject, id, msg.Reply, msg.Value)
 	log.Debug("sub sending %s", result)
 	_, err := conn.Write([]byte(result))

@@ -6,8 +6,8 @@ import (
 
 	psnet "github.com/mateusf777/pubsub/net"
 
+	"github.com/mateusf777/pubsub/domain"
 	"github.com/mateusf777/pubsub/log"
-	"github.com/mateusf777/pubsub/pubsub"
 )
 
 func Start(address string) {
@@ -26,7 +26,7 @@ func Start(address string) {
 }
 
 func acceptClients(l net.Listener) {
-	ps := pubsub.NewPubSub()
+	ps := domain.NewPubSub()
 	defer ps.Stop()
 
 	for {
