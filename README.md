@@ -15,6 +15,7 @@ go build -o ps-server         // build the pubsub server
 go build ./example/subscriber // build the subscriber example
 go build ./example/publisher  // build the publisher example
 go build ./example/request    // build the request example
+go build ./example/queue      // build the queue example
 ```
 
 ### Run
