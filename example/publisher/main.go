@@ -32,18 +32,13 @@ func send() {
 	}
 	defer conn.Close()
 
-	count := 0
 	log.Info("start sending")
-	for {
-		count++
-		msg := fmt.Sprintf("this is a longer test with count: %d", count)
+	for i := 0; i < messages; i++ {
+		msg := fmt.Sprintf("this is a longer test with count: %d", i)
 		err := conn.Publish("test", []byte(msg))
 		if err != nil {
 			log.Error("%v", err)
-			break
-		}
-		if count >= messages {
-			break
+			return
 		}
 	}
 	log.Info("finish sending")

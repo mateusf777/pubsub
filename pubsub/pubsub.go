@@ -70,7 +70,8 @@ func WithReply(subject string) PubOpt {
 // Returns an error if there are no subscribers for the subject
 func (ps *PubSub) Publish(subject string, value interface{}, opts ...PubOpt) error {
 	if !ps.hasSubscriber(subject) {
-		return fmt.Errorf("no subscribers for this subject")
+		// if there's no subscriber it's ok and it doesn't return an error, but short-circuit here
+		return nil
 	}
 
 	message := Message{
@@ -170,13 +171,15 @@ func (ps *PubSub) UnsubAll(client string) {
 	ps.handlersMap.Range(func(subject, hs interface{}) bool {
 		handlers := hs.([]HandlerSubject)
 		size := len(handlers)
+		count := 0
 		for i := 0; i < size; i++ {
 			if handlers[i].client == client {
 				handlers[i] = handlers[size-1]
-				size--
+				count++
 			}
 		}
-		ps.handlersMap.Store(subject, handlers[:size])
+		cleanHs := handlers[:size-count]
+		ps.handlersMap.Store(subject, cleanHs)
 		return true
 	})
 }

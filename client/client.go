@@ -83,6 +83,15 @@ func (c *Conn) Subscribe(subject string, handle pubsub.Handler) error {
 	return err
 }
 
+func (c *Conn) QueueSubscribe(subject string, queue string, handle pubsub.Handler) error {
+	c.ps.nextSub++
+	c.ps.subscribers[c.ps.nextSub] = handle
+	result := fmt.Sprintf("SUB %s %d %d %s\r\n", subject, c.ps.nextSub, -1, queue)
+	log.Debug(result)
+	_, err := c.conn.Write([]byte(result))
+	return err
+}
+
 func (c *Conn) Request(subject string, msg []byte) (pubsub.Message, error) {
 	resCh := make(chan pubsub.Message)
 	c.ps.nextSub++
