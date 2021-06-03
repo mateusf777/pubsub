@@ -110,3 +110,17 @@ func (c *Conn) Request(subject string, msg []byte) (*Message, error) {
 		return r, nil
 	}
 }
+
+func (c *Conn) PublishRequest(subject string, reply string, msg []byte) error {
+	if msg == nil {
+		msg = []byte("_")
+	}
+	result := fmt.Sprintf("PUB %s %s\r\n%v\r\n", subject, reply, string(msg))
+	log.Debug(result)
+	_, err := c.conn.Write([]byte(result))
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
