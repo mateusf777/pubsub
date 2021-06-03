@@ -6,7 +6,6 @@ import (
 
 	"github.com/mateusf777/pubsub/client"
 	"github.com/mateusf777/pubsub/log"
-	"github.com/mateusf777/pubsub/pubsub"
 )
 
 const (
@@ -30,11 +29,11 @@ func main() {
 	count := 0
 	for i := 0; i < queue; i++ {
 		n := i
-		err = conn.QueueSubscribe("echo", "queue", func(msg pubsub.Message) {
+		err = conn.QueueSubscribe("echo", "queue", func(msg *client.Message) {
 			mu.Lock()
 			count++
 			mu.Unlock()
-			log.Info("Queue %d, received: %+v", n, msg.Value)
+			log.Info("Queue %d, received: %s", n, msg.Data)
 		})
 		if err != nil {
 			log.Error("Queue %d, error: %v", n, err)

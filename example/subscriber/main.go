@@ -8,7 +8,6 @@ import (
 
 	"github.com/mateusf777/pubsub/client"
 	"github.com/mateusf777/pubsub/log"
-	"github.com/mateusf777/pubsub/pubsub"
 )
 
 func main() {
@@ -22,7 +21,7 @@ func main() {
 	defer conn.Close()
 
 	count := 0
-	err = conn.Subscribe("test", func(msg pubsub.Message) {
+	err = conn.Subscribe("test", func(msg *client.Message) {
 		count++
 		if count >= 8000000 {
 			log.Info("received %d", count)
@@ -33,9 +32,9 @@ func main() {
 		return
 	}
 
-	err = conn.Subscribe("count", func(msg pubsub.Message) {
+	err = conn.Subscribe("count", func(msg *client.Message) {
 		resp := strconv.Itoa(count)
-		err = conn.Publish(msg.Reply, []byte(resp))
+		err = msg.Respond([]byte(resp))
 		if err != nil {
 			log.Error("%v", err)
 		}
@@ -46,10 +45,10 @@ func main() {
 		return
 	}
 
-	err = conn.Subscribe("time", func(msg pubsub.Message) {
+	err = conn.Subscribe("time", func(msg *client.Message) {
 		log.Debug("getting time")
 		resp := time.Now().String()
-		err = conn.Publish(msg.Reply, []byte(resp))
+		err = msg.Respond([]byte(resp))
 		if err != nil {
 			log.Error("%v", err)
 		}

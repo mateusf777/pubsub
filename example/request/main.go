@@ -22,5 +22,5 @@ func main() {
 		return
 	}
 
-	log.Info("now: %v", resp.Value)
+	log.Info("now: %s", resp.Data)
 }
