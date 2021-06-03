@@ -9,12 +9,14 @@ import (
 	"github.com/mateusf777/pubsub/log"
 )
 
+// Conn contains the state of the connection with the pubsub server to perform the necessary operations
 type Conn struct {
 	conn      net.Conn
 	ps        *pubSub
 	nextReply int
 }
 
+// Connect makes the connection with the server
 func Connect(address string) (*Conn, error) {
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
@@ -30,6 +32,7 @@ func Connect(address string) (*Conn, error) {
 	return nc, nil
 }
 
+// Close sends the "stop" operation so the server can clean up the resources
 func (c *Conn) Close() {
 	result := fmt.Sprintf("%v\r\n", "stop")
 	log.Debug(result)
@@ -39,6 +42,7 @@ func (c *Conn) Close() {
 	}
 }
 
+// Publish sends a message for a subject
 func (c *Conn) Publish(subject string, msg []byte) error {
 	result := fmt.Sprintf("PUB %s\r\n%v\r\n", subject, string(msg))
 	log.Debug(result)
@@ -49,6 +53,7 @@ func (c *Conn) Publish(subject string, msg []byte) error {
 	return nil
 }
 
+// Subscribe registers a handler that listen for messages sent to a subjets
 func (c *Conn) Subscribe(subject string, handle Handler) error {
 	c.ps.nextSub++
 	c.ps.subscribers[c.ps.nextSub] = handle
@@ -58,6 +63,7 @@ func (c *Conn) Subscribe(subject string, handle Handler) error {
 	return err
 }
 
+// QueueSubscribe as subscribe, but the server will randomly load balance among the handlers in the queue
 func (c *Conn) QueueSubscribe(subject string, queue string, handle Handler) error {
 	c.ps.nextSub++
 	c.ps.subscribers[c.ps.nextSub] = handle
@@ -67,6 +73,7 @@ func (c *Conn) QueueSubscribe(subject string, queue string, handle Handler) erro
 	return err
 }
 
+// Request as publish, but blocks until receives a response from a subscriber
 func (c *Conn) Request(subject string, msg []byte) (*Message, error) {
 	resCh := make(chan *Message)
 	c.ps.nextSub++

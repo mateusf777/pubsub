@@ -25,5 +25,5 @@ func main() {
 		address = defaultAddress
 	}
 
-	server.Start(address)
+	server.Run(address)
 }

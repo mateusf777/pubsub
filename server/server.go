@@ -10,7 +10,9 @@ import (
 	"github.com/mateusf777/pubsub/log"
 )
 
-func Start(address string) {
+// Run stars to listen in the given address
+// Ex: server.Run("localhost:9999")
+func Run(address string) {
 	l, err := net.Listen("tcp4", address)
 	if err != nil {
 		log.Error("%v\n", err)
@@ -25,6 +27,7 @@ func Start(address string) {
 	log.Info("Stopping PubSub")
 }
 
+// Starts a concurrent handler for each connection
 func acceptClients(l net.Listener) {
 	ps := domain.NewPubSub()
 	defer ps.Stop()
@@ -32,6 +35,7 @@ func acceptClients(l net.Listener) {
 	for {
 		c, err := l.Accept()
 		if err != nil {
+			// Todo: better handle connection to stop hiding errors like this
 			if strings.Contains(err.Error(), psnet.CloseErr) {
 				return
 			}
