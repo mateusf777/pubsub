@@ -1,10 +1,13 @@
 package client
 
 import (
+	"bytes"
 	"fmt"
 	"net"
 	"strconv"
 	"time"
+
+	psnet "github.com/mateusf777/pubsub/net"
 
 	"github.com/mateusf777/pubsub/log"
 )
@@ -44,9 +47,9 @@ func (c *Conn) Close() {
 
 // Publish sends a message for a subject
 func (c *Conn) Publish(subject string, msg []byte) error {
-	result := fmt.Sprintf("PUB %s\r\n%v\r\n", subject, string(msg))
-	log.Debug(result)
-	_, err := c.conn.Write([]byte(result))
+	result := bytes.Join([][]byte{psnet.OpPub, psnet.Space, []byte(subject), psnet.CRLF, msg, psnet.CRLF}, []byte{})
+	log.Debug(string(result))
+	_, err := c.conn.Write(result)
 	if err != nil {
 		return err
 	}
@@ -95,9 +98,10 @@ func (c *Conn) Request(subject string, msg []byte) (*Message, error) {
 		msg = []byte("_")
 	}
 	log.Debug(reply)
-	result = fmt.Sprintf("PUB %s %s\r\n%v\r\n", subject, reply, string(msg))
-	log.Debug(result)
-	_, err = c.conn.Write([]byte(result))
+	bResult := bytes.Join([][]byte{psnet.OpPub, psnet.Space, []byte(subject), psnet.CRLF, msg, psnet.CRLF}, []byte{})
+	//result = fmt.Sprintf("PUB %s %s\r\n%v\r\n", subject, reply, msg)
+	log.Debug(string(bResult))
+	_, err = c.conn.Write(bResult)
 	if err != nil {
 		return nil, err
 	}
@@ -115,9 +119,9 @@ func (c *Conn) PublishRequest(subject string, reply string, msg []byte) error {
 	if msg == nil {
 		msg = []byte("_")
 	}
-	result := fmt.Sprintf("PUB %s %s\r\n%v\r\n", subject, reply, string(msg))
-	log.Debug(result)
-	_, err := c.conn.Write([]byte(result))
+	result := bytes.Join([][]byte{psnet.OpPub, psnet.Space, []byte(subject), psnet.Space, []byte(reply), psnet.CRLF, msg, psnet.CRLF}, []byte{})
+	log.Debug(string(result))
+	_, err := c.conn.Write(result)
 	if err != nil {
 		return err
 	}

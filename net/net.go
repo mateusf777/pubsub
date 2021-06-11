@@ -1,11 +1,11 @@
 package net
 
 import (
+	"bytes"
 	"fmt"
 	"net"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -14,29 +14,29 @@ import (
 
 const TTL = 5 * time.Minute
 
-const (
-	OpStop  = "STOP"
-	OpPub   = "PUB"
-	OpSub   = "SUB"
-	OpUnsub = "UNSUB"
-	OpPong  = "PONG"
-	OpPing  = "PING"
+var (
+	OpStop  = []byte{'S', 'T', 'O', 'P'}
+	OpPub   = []byte{'P', 'U', 'B'}
+	OpSub   = []byte{'S', 'U', 'B'}
+	OpUnsub = []byte{'U', 'N', 'S', 'U', 'B'}
+	OpPong  = []byte{'P', 'O', 'N', 'G'}
+	OpPing  = []byte{'P', 'I', 'N', 'G'}
 
-	OpOK  = "+OK"
-	OpERR = "-ERR"
-	OpMsg = "MSG"
+	OpOK  = []byte{'+', 'O', 'K'}
+	OpERR = []byte{'-', 'E', 'R', 'R'}
+	OpMsg = []byte{'M', 'S', 'G'}
 )
 
-const (
-	CRLF  = "\r\n"
-	Space = " "
-	Empty = ""
-	OK    = OpOK + CRLF
+var (
+	CRLF  = []byte{'\r', '\n'}
+	Space = []byte{' '}
+	Empty []byte
+	OK    = bytes.Join([][]byte{OpOK, CRLF}, []byte{})
 )
 
 const CloseErr = "use of closed network connection"
 
-func Read(c net.Conn, buffer []byte, dataCh chan string) {
+func Read(c net.Conn, buffer []byte, dataCh chan []byte) {
 	accumulator := Empty
 	for {
 		n, err := c.Read(buffer)
@@ -44,10 +44,11 @@ func Read(c net.Conn, buffer []byte, dataCh chan string) {
 			return
 		}
 
-		messages := strings.Split(accumulator+string(buffer[:n]), CRLF)
+		toBeSplit := bytes.Join([][]byte{accumulator, buffer[:n]}, []byte{})
+		messages := bytes.Split(toBeSplit, CRLF)
 		accumulator = Empty
 
-		if !strings.HasSuffix(string(buffer[:n]), CRLF) {
+		if !bytes.HasSuffix(buffer[:n], CRLF) {
 			accumulator = messages[len(messages)-1]
 			messages = messages[:len(messages)-1]
 		}
@@ -80,7 +81,7 @@ Timeout:
 				break Timeout
 			}
 
-			_, err := c.Write([]byte(OpPing + CRLF))
+			_, err := c.Write(bytes.Join([][]byte{OpPing, CRLF}, []byte{}))
 			if err != nil {
 				log.Error("%v\n", err)
 			}

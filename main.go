@@ -21,7 +21,7 @@ func main() {
 	log.SetLevel(log.INFO)
 
 	address := os.Getenv("PUBSUB_ADDRESS")
-	if address == psnet.Empty {
+	if address == string(psnet.Empty) {
 		address = defaultAddress
 	}
 

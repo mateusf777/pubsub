@@ -41,7 +41,7 @@ type Message struct {
 // Respond is a convenience method to respond to a requester
 func (m *Message) Respond(data []byte) error {
 	// Ignores responses when there's no reply subject
-	if m.Reply == psnet.Empty {
+	if m.Reply == string(psnet.Empty) {
 		return nil
 	}
 	return m.conn.Publish(m.Reply, data)

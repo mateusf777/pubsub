@@ -1,9 +1,9 @@
 package client
 
 import (
+	"bytes"
 	"net"
 	"strconv"
-	"strings"
 
 	"github.com/mateusf777/pubsub/log"
 	psnet "github.com/mateusf777/pubsub/net"
@@ -24,7 +24,7 @@ func handleConnection(c *Conn, ps *pubSub) {
 	timeoutReset := make(chan bool)
 
 	buffer := make([]byte, 1024)
-	dataCh := make(chan string, 10)
+	dataCh := make(chan []byte, 10)
 
 	go func() {
 		for {
@@ -35,34 +35,34 @@ func handleConnection(c *Conn, ps *pubSub) {
 				log.Debug("Received %v", netData)
 				timeoutReset <- true
 
-				temp := strings.TrimSpace(netData)
-				if temp == psnet.Empty {
+				temp := bytes.TrimSpace(netData)
+				if bytes.Compare(temp, psnet.Empty) == 0 {
 					continue
 				}
 
-				if accumulator != psnet.Empty {
-					temp = accumulator + psnet.CRLF + temp
+				if bytes.Compare(accumulator, psnet.Empty) != 0 {
+					temp = bytes.Join([][]byte{accumulator, psnet.CRLF, temp}, []byte{})
 				}
 
-				var result string
+				var result []byte
 				switch {
-				case strings.ToUpper(temp) == psnet.OpPing:
-					result = psnet.OpPong + "\n"
+				case bytes.Compare(bytes.ToUpper(temp), psnet.OpPing) == 0:
+					result = bytes.Join([][]byte{psnet.OpPong, psnet.CRLF}, []byte{})
 					break
 
-				case strings.ToUpper(temp) == psnet.OpPong:
+				case bytes.Compare(bytes.ToUpper(temp), psnet.OpPong) == 0:
 					break
 
-				case strings.ToUpper(temp) == psnet.OpOK:
+				case bytes.Compare(bytes.ToUpper(temp), psnet.OpOK) == 0:
 					break
 
-				case strings.ToUpper(temp) == psnet.OpERR:
-					log.Error(temp)
+				case bytes.Compare(bytes.ToUpper(temp), psnet.OpERR) == 0:
+					log.Error("%s", temp)
 					break
 
-				case strings.HasPrefix(strings.ToUpper(temp), psnet.OpMsg):
+				case bytes.HasPrefix(bytes.ToUpper(temp), psnet.OpMsg):
 					log.Debug("in opMsg...")
-					if accumulator == psnet.Empty {
+					if bytes.Compare(bytes.ToUpper(accumulator), psnet.Empty) == 0 {
 						accumulator = temp
 						continue
 					}
@@ -73,8 +73,8 @@ func handleConnection(c *Conn, ps *pubSub) {
 					result = psnet.Empty
 				}
 
-				if result != psnet.Empty {
-					_, err := c.conn.Write([]byte(result))
+				if bytes.Compare(result, psnet.Empty) != 0 {
+					_, err := c.conn.Write(result)
 					if err != nil {
 						log.Error("%v\n", err)
 					}
@@ -93,28 +93,28 @@ func handleConnection(c *Conn, ps *pubSub) {
 	return
 }
 
-func handleMsg(c *Conn, ps *pubSub, received string) {
+func handleMsg(c *Conn, ps *pubSub, received []byte) {
 	log.Debug("handleMsg, %s", received)
-	parts := strings.Split(received, psnet.CRLF)
-	args := strings.Split(parts[0], psnet.Space)
+	parts := bytes.Split(received, psnet.CRLF)
+	args := bytes.Split(parts[0], psnet.Space)
 	msg := parts[1]
 	if len(args) < 3 || len(args) > 4 {
 		return //"-ERR should be MSG <subject> <id> [reply-to]\n"
 	}
 
-	var reply string
+	var reply []byte
 	if len(args) == 4 {
 		reply = args[3]
 	}
 
 	message := &Message{
 		conn:    c,
-		Subject: args[1],
-		Reply:   reply,
-		Data:    []byte(msg),
+		Subject: string(args[1]),
+		Reply:   string(reply),
+		Data:    msg,
 	}
 
-	id, _ := strconv.Atoi(args[2])
+	id, _ := strconv.Atoi(string(args[2]))
 
 	err := ps.publish(id, message)
 	if err != nil {

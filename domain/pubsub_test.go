@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"bytes"
 	"testing"
 	"time"
 )
@@ -33,11 +34,10 @@ func TestNewPubSub(t *testing.T) {
 func TestPublishWithoutSub(t *testing.T) {
 	ps := NewPubSub()
 
-	err := ps.Publish("test", "")
-	if err == nil {
-		t.Errorf("should have returned an error")
+	err := ps.Publish("test", []byte{})
+	if err != nil {
+		t.Errorf("should not have returned an error")
 	}
-	t.Logf("%+v", err)
 }
 
 func TestSubscribe(t *testing.T) {
@@ -61,10 +61,11 @@ func TestSubscribe(t *testing.T) {
 
 func TestReceiveMessage(t *testing.T) {
 	ps := NewPubSub()
+	test := []byte("test")
 	received := false
 	err := ps.Subscribe("test", "client", func(msg Message) {
 		received = true
-		if msg.Subject != "test" || msg.Value != "test" {
+		if msg.Subject != "test" || bytes.Compare(msg.Data, test) != 0 {
 			t.Errorf("the message was not what the expected, %v", msg)
 		}
 		t.Logf("%v", msg)
@@ -73,7 +74,7 @@ func TestReceiveMessage(t *testing.T) {
 		t.Errorf("should not return an error, %+v", err)
 	}
 
-	err = ps.Publish("test", "test")
+	err = ps.Publish("test", test)
 	if err != nil {
 		t.Errorf("should not return an error, %+v", err)
 	}

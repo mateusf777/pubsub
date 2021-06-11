@@ -22,7 +22,7 @@ type PubSub struct {
 type Message struct {
 	Subject string
 	Reply   string
-	Value   interface{}
+	Data    []byte
 }
 
 // HandlerSubject represents a handler for a subject
@@ -68,7 +68,7 @@ func WithReply(subject string) PubOpt {
 
 // Publish constructs a message based in a PUB op and sends it to be routed to the subscribers
 // Returns an error if there are no subscribers for the subject
-func (ps *PubSub) Publish(subject string, value interface{}, opts ...PubOpt) error {
+func (ps *PubSub) Publish(subject string, data []byte, opts ...PubOpt) error {
 	if !ps.hasSubscriber(subject) {
 		// if there's no subscriber it's ok and it doesn't return an error, but short-circuit here
 		return nil
@@ -76,7 +76,7 @@ func (ps *PubSub) Publish(subject string, value interface{}, opts ...PubOpt) err
 
 	message := Message{
 		Subject: subject,
-		Value:   value,
+		Data:    data,
 	}
 	for _, opt := range opts {
 		opt(&message)
