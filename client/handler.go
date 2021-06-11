@@ -5,6 +5,8 @@ import (
 	"net"
 	"strconv"
 
+	"github.com/mateusf777/pubsub/domain"
+
 	"github.com/mateusf777/pubsub/log"
 	psnet "github.com/mateusf777/pubsub/net"
 )
@@ -41,13 +43,13 @@ func handleConnection(c *Conn, ps *pubSub) {
 				}
 
 				if bytes.Compare(accumulator, psnet.Empty) != 0 {
-					temp = bytes.Join([][]byte{accumulator, psnet.CRLF, temp}, []byte{})
+					temp = domain.Join(accumulator, psnet.CRLF, temp)
 				}
 
 				var result []byte
 				switch {
 				case bytes.Compare(bytes.ToUpper(temp), psnet.OpPing) == 0:
-					result = bytes.Join([][]byte{psnet.OpPong, psnet.CRLF}, []byte{})
+					result = domain.Join(psnet.OpPong, psnet.CRLF)
 					break
 
 				case bytes.Compare(bytes.ToUpper(temp), psnet.OpPong) == 0:

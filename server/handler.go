@@ -46,7 +46,7 @@ func handleConnection(c net.Conn, ps *domain.PubSub) {
 					continue
 				}
 				if bytes.Compare(accumulator, psnet.Empty) != 0 {
-					temp = bytes.Join([][]byte{accumulator, psnet.CRLF, temp}, []byte{})
+					temp = domain.Join(accumulator, psnet.CRLF, temp)
 				}
 
 				var result []byte
@@ -58,7 +58,7 @@ func handleConnection(c net.Conn, ps *domain.PubSub) {
 					break Loop
 
 				case bytes.Compare(bytes.ToUpper(temp), psnet.OpPing) == 0:
-					result = bytes.Join([][]byte{psnet.OpPong, psnet.CRLF}, []byte{})
+					result = domain.Join(psnet.OpPong, psnet.CRLF)
 					break
 
 				case bytes.Compare(bytes.ToUpper(temp), psnet.OpPong) == 0:
@@ -81,7 +81,7 @@ func handleConnection(c net.Conn, ps *domain.PubSub) {
 					result = handleUnsub(ps, client, temp)
 
 				default:
-					result = bytes.Join([][]byte{[]byte("-ERR invalid protocol"), psnet.CRLF}, []byte{})
+					result = domain.Join([]byte("-ERR invalid protocol"), psnet.CRLF)
 				}
 				_, err := c.Write(result)
 				if err != nil {
@@ -119,8 +119,7 @@ func handlePub(c net.Conn, ps *domain.PubSub, client string, received []byte) []
 	if len(args) == 3 {
 		reply := args[2]
 		err := ps.Subscribe(string(reply), client, func(msg domain.Message) {
-
-			result = bytes.Join([][]byte{psnet.OpMsg, psnet.Space, []byte(msg.Subject), psnet.Space, []byte(msg.Reply), psnet.CRLF, msg.Data, psnet.CRLF}, []byte{})
+			result = domain.Join(psnet.OpMsg, psnet.Space, []byte(msg.Subject), psnet.Space, []byte(msg.Reply), psnet.CRLF, msg.Data, psnet.CRLF)
 			log.Debug("pub sending %s", result)
 			_, err := c.Write(result)
 			if err != nil {
@@ -129,7 +128,7 @@ func handlePub(c net.Conn, ps *domain.PubSub, client string, received []byte) []
 
 		}, domain.WithMaxMsg(1))
 		if err != nil {
-			return bytes.Join([][]byte{psnet.OpERR, []byte(err.Error())}, psnet.Space)
+			return domain.Join(psnet.OpERR, psnet.Space, []byte(err.Error()))
 		}
 		opts = append(opts, domain.WithReply(string(reply)))
 	}
@@ -137,7 +136,7 @@ func handlePub(c net.Conn, ps *domain.PubSub, client string, received []byte) []
 	// dispatch
 	err := ps.Publish(string(args[1]), msg, opts...)
 	if err != nil {
-		return bytes.Join([][]byte{psnet.OpERR, []byte(err.Error())}, psnet.Space)
+		return domain.Join(psnet.OpERR, psnet.Space, []byte(err.Error()))
 	}
 
 	return result
@@ -157,7 +156,7 @@ func handleUnsub(ps *domain.PubSub, client string, received []byte) []byte {
 	// dispatch
 	err := ps.Unsubscribe(string(args[1]), client, id)
 	if err != nil {
-		return bytes.Join([][]byte{psnet.OpERR, []byte(err.Error())}, psnet.Space)
+		return domain.Join(psnet.OpERR, psnet.Space, []byte(err.Error()))
 	}
 	return result
 }
@@ -193,14 +192,14 @@ func handleSub(c net.Conn, ps *domain.PubSub, client string, received []byte) []
 		}
 	}, opts...)
 	if err != nil {
-		return bytes.Join([][]byte{psnet.OpERR, []byte(err.Error())}, psnet.Space)
+		return domain.Join(psnet.OpERR, psnet.Space, []byte(err.Error()))
 	}
 
 	return result
 }
 
 func sendMsg(conn net.Conn, id int, msg domain.Message) error {
-	result := bytes.Join([][]byte{psnet.OpMsg, psnet.Space, []byte(msg.Subject), psnet.Space, []byte(strconv.Itoa(id)), psnet.Space, []byte(msg.Reply), psnet.CRLF, msg.Data, psnet.CRLF}, []byte{})
+	result := domain.Join(psnet.OpMsg, psnet.Space, []byte(msg.Subject), psnet.Space, []byte(strconv.Itoa(id)), psnet.Space, []byte(msg.Reply), psnet.CRLF, msg.Data, psnet.CRLF)
 	log.Debug("%s", result)
 	_, err := conn.Write(result)
 	if err != nil {

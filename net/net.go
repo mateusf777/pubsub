@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mateusf777/pubsub/domain"
 	"github.com/mateusf777/pubsub/log"
 )
 
@@ -31,7 +32,7 @@ var (
 	CRLF  = []byte{'\r', '\n'}
 	Space = []byte{' '}
 	Empty []byte
-	OK    = bytes.Join([][]byte{OpOK, CRLF}, []byte{})
+	OK    = domain.Join(OpOK, CRLF)
 )
 
 const CloseErr = "use of closed network connection"
@@ -44,7 +45,7 @@ func Read(c net.Conn, buffer []byte, dataCh chan []byte) {
 			return
 		}
 
-		toBeSplit := bytes.Join([][]byte{accumulator, buffer[:n]}, []byte{})
+		toBeSplit := domain.Join(accumulator, buffer[:n])
 		messages := bytes.Split(toBeSplit, CRLF)
 		accumulator = Empty
 
@@ -81,7 +82,7 @@ Timeout:
 				break Timeout
 			}
 
-			_, err := c.Write(bytes.Join([][]byte{OpPing, CRLF}, []byte{}))
+			_, err := c.Write(domain.Join(OpPing, CRLF))
 			if err != nil {
 				log.Error("%v\n", err)
 			}
