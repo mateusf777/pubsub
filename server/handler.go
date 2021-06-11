@@ -42,16 +42,14 @@ func handleConnection(c net.Conn, ps *domain.PubSub) {
 				timeoutReset <- true
 
 				temp := bytes.TrimSpace(netData)
-				if bytes.Compare(temp, psnet.Empty) == 0 {
-					continue
-				}
+
 				if bytes.Compare(accumulator, psnet.Empty) != 0 {
 					temp = domain.Join(accumulator, psnet.CRLF, temp)
 				}
 
 				var result []byte
 				switch {
-				case bytes.Compare(bytes.ToUpper(temp), psnet.OpStop) == 0:
+				case bytes.Compare(bytes.ToUpper(temp), psnet.OpStop) == 0, bytes.Compare(temp, psnet.ControlC) == 0:
 					log.Info("Closing connection with %s\n", c.RemoteAddr().String())
 					stopTimeout <- true
 					closeHandler <- true
@@ -81,6 +79,9 @@ func handleConnection(c net.Conn, ps *domain.PubSub) {
 					result = handleUnsub(ps, client, temp)
 
 				default:
+					if bytes.Compare(temp, psnet.Empty) == 0 {
+						continue
+					}
 					result = domain.Join([]byte("-ERR invalid protocol"), psnet.CRLF)
 				}
 				_, err := c.Write(result)

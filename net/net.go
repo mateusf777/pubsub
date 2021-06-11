@@ -29,10 +29,11 @@ var (
 )
 
 var (
-	CRLF  = []byte{'\r', '\n'}
-	Space = []byte{' '}
-	Empty []byte
-	OK    = domain.Join(OpOK, CRLF)
+	CRLF     = []byte{'\r', '\n'}
+	Space    = []byte{' '}
+	Empty    []byte
+	OK       = domain.Join(OpOK, CRLF)
+	ControlC = []byte{255, 244, 255, 253, 6}
 )
 
 const CloseErr = "use of closed network connection"
@@ -49,8 +50,12 @@ func Read(c net.Conn, buffer []byte, dataCh chan []byte) {
 		messages := bytes.Split(toBeSplit, CRLF)
 		accumulator = Empty
 
-		if !bytes.HasSuffix(buffer[:n], CRLF) {
+		if !bytes.HasSuffix(buffer[:n], CRLF) && bytes.Compare(buffer[:n], ControlC) != 0 {
 			accumulator = messages[len(messages)-1]
+			messages = messages[:len(messages)-1]
+		}
+
+		if len(messages) > 0 && len(messages[len(messages)-1]) == 0 {
 			messages = messages[:len(messages)-1]
 		}
 

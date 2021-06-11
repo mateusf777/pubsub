@@ -95,12 +95,8 @@ func (c *Conn) Request(subject string, msg []byte) (*Message, error) {
 		return nil, err
 	}
 
-	if msg == nil {
-		msg = []byte("_")
-	}
 	log.Debug(reply)
-	bResult := domain.Join(psnet.OpPub, psnet.Space, []byte(subject), psnet.CRLF, msg, psnet.CRLF)
-	//result = fmt.Sprintf("PUB %s %s\r\n%v\r\n", subject, reply, msg)
+	bResult := domain.Join(psnet.OpPub, psnet.Space, []byte(subject), psnet.Space, []byte(reply), psnet.CRLF, msg, psnet.CRLF)
 	log.Debug(string(bResult))
 	_, err = c.conn.Write(bResult)
 	if err != nil {
@@ -117,9 +113,6 @@ func (c *Conn) Request(subject string, msg []byte) (*Message, error) {
 }
 
 func (c *Conn) PublishRequest(subject string, reply string, msg []byte) error {
-	if msg == nil {
-		msg = []byte("_")
-	}
 	result := domain.Join(psnet.OpPub, psnet.Space, []byte(subject), psnet.Space, []byte(reply), psnet.CRLF, msg, psnet.CRLF)
 	log.Debug(string(result))
 	_, err := c.conn.Write(result)

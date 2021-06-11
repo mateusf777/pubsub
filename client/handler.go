@@ -38,9 +38,6 @@ func handleConnection(c *Conn, ps *pubSub) {
 				timeoutReset <- true
 
 				temp := bytes.TrimSpace(netData)
-				if bytes.Compare(temp, psnet.Empty) == 0 {
-					continue
-				}
 
 				if bytes.Compare(accumulator, psnet.Empty) != 0 {
 					temp = domain.Join(accumulator, psnet.CRLF, temp)
@@ -72,6 +69,9 @@ func handleConnection(c *Conn, ps *pubSub) {
 					handleMsg(c, ps, temp)
 
 				default:
+					if bytes.Compare(temp, psnet.Empty) == 0 {
+						continue
+					}
 					result = psnet.Empty
 				}
 
