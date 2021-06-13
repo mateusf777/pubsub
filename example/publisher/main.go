@@ -2,8 +2,7 @@ package main
 
 import (
 	"fmt"
-
-	psnet "github.com/mateusf777/pubsub/net"
+	"sync"
 
 	"github.com/mateusf777/pubsub/client"
 	"github.com/mateusf777/pubsub/log"
@@ -17,20 +16,23 @@ const (
 func main() {
 	log.SetLevel(log.INFO)
 
+	wg := &sync.WaitGroup{}
 	for i := 0; i < routines; i++ {
-		go send()
+		wg.Add(1)
+		go send(wg)
 	}
 
-	psnet.Wait()
+	wg.Wait()
 }
 
-func send() {
+func send(wg *sync.WaitGroup) {
 	conn, err := client.Connect(":9999")
 	if err != nil {
 		log.Error("%v", err)
 		return
 	}
-	defer conn.Close()
+	defer wg.Done()
+	defer conn.Drain()
 
 	log.Info("start sending")
 	for i := 0; i < messages; i++ {

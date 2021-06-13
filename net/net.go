@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -13,7 +14,7 @@ import (
 	"github.com/mateusf777/pubsub/log"
 )
 
-const TTL = 5 * time.Minute
+const TTL = 5 * time.Second
 
 var (
 	OpStop  = []byte{'S', 'T', 'O', 'P'}
@@ -34,6 +35,8 @@ var (
 	Empty    []byte
 	OK       = domain.Join(OpOK, CRLF)
 	ControlC = []byte{255, 244, 255, 253, 6}
+	Stop     = domain.Join(OpStop, CRLF)
+	Ping     = domain.Join(OpPing, CRLF)
 )
 
 const CloseErr = "use of closed network connection"
@@ -89,9 +92,13 @@ Timeout:
 
 			_, err := c.Write(domain.Join(OpPing, CRLF))
 			if err != nil {
-				log.Error("%v\n", err)
+				if strings.Contains(err.Error(), "broken pipe") {
+					log.Info("Connection closed, MonitorTimeout %s\n", c.RemoteAddr().String())
+					closeHandler <- true
+					return
+				}
+				log.Error("net MonitorTimeout, %v\n", err)
 			}
-
 		}
 	}
 }

@@ -2,8 +2,10 @@ package server
 
 import (
 	"bytes"
+	"fmt"
 	"net"
 	"strconv"
+	"strings"
 
 	psnet "github.com/mateusf777/pubsub/net"
 
@@ -32,9 +34,9 @@ func handleConnection(c net.Conn, ps *domain.PubSub) {
 	dataCh := make(chan []byte, 100)
 
 	go func() {
+		go psnet.Read(c, buffer, dataCh)
 	Loop:
 		for {
-			go psnet.Read(c, buffer, dataCh)
 
 			// dispatch
 			accumulator := psnet.Empty
@@ -86,7 +88,10 @@ func handleConnection(c net.Conn, ps *domain.PubSub) {
 				}
 				_, err := c.Write(result)
 				if err != nil {
-					log.Error("%v\n", err)
+					if strings.Contains(err.Error(), "broken pipe") || strings.Contains(err.Error(), "connection reset by peer") {
+						continue
+					}
+					log.Error("server handler handleConnection, %v\n", err)
 				}
 
 				// reset accumulator
@@ -124,7 +129,7 @@ func handlePub(c net.Conn, ps *domain.PubSub, client string, received []byte) []
 			log.Debug("pub sending %s", result)
 			_, err := c.Write(result)
 			if err != nil {
-				log.Error("%v\n", err)
+				log.Error("server handler handlePub, %v\n", err)
 			}
 
 		}, domain.WithMaxMsg(1))
@@ -204,7 +209,7 @@ func sendMsg(conn net.Conn, id int, msg domain.Message) error {
 	log.Debug("%s", result)
 	_, err := conn.Write(result)
 	if err != nil {
-		return err
+		return fmt.Errorf("server handler sendMsg, %v", err)
 	}
 	return nil
 }
