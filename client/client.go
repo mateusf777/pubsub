@@ -68,8 +68,6 @@ func (c *Conn) Close() {
 
 // Drain ...
 func (c *Conn) Drain() {
-	//c.stopTimeout <- true
-	//c.cancel()
 	_, _ = c.conn.Write(psnet.Stop)
 	for {
 		_, err := c.conn.Write(psnet.Ping)
