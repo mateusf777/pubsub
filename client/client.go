@@ -1,9 +1,11 @@
 package client
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mateusf777/pubsub/domain"
@@ -17,6 +19,8 @@ import (
 type Conn struct {
 	conn      net.Conn
 	ps        *pubSub
+	cancel    context.CancelFunc
+	drained   chan struct{}
 	nextReply int
 }
 
@@ -28,22 +32,56 @@ func Connect(address string) (*Conn, error) {
 	}
 	ps := newPubSub()
 
+	ctx, cancel := context.WithCancel(context.Background())
 	nc := &Conn{
-		conn: conn,
-		ps:   ps,
+		conn:    conn,
+		ps:      ps,
+		cancel:  cancel,
+		drained: make(chan struct{}),
 	}
-	go handleConnection(nc, ps)
+
+	go handleConnection(nc, ctx, ps)
 	return nc, nil
 }
 
 // Close sends the "stop" operation so the server can clean up the resources
 func (c *Conn) Close() {
-	result := fmt.Sprintf("%v\r\n", "stop")
-	log.Debug(result)
-	_, err := c.conn.Write([]byte(result))
+	_, err := c.conn.Write(psnet.Stop)
 	if err != nil {
-		log.Error("%v", err)
+		if !strings.Contains(err.Error(), "broken pipe") {
+			log.Error("client close, %v", err)
+		}
+	} else {
+		for {
+			_, err := c.conn.Write(psnet.Ping)
+			if err != nil {
+				continue
+			}
+			break
+		}
 	}
+
+	log.Info("close")
+	c.cancel()
+	<-c.drained
+}
+
+// Drain ...
+func (c *Conn) Drain() {
+	//c.stopTimeout <- true
+	//c.cancel()
+	_, _ = c.conn.Write(psnet.Stop)
+	for {
+		_, err := c.conn.Write(psnet.Ping)
+		if err == nil {
+			continue
+		}
+		break
+	}
+
+	log.Info("close")
+	c.cancel()
+	<-c.drained
 }
 
 // Publish sends a message for a subject
@@ -52,7 +90,7 @@ func (c *Conn) Publish(subject string, msg []byte) error {
 	log.Debug(string(result))
 	_, err := c.conn.Write(result)
 	if err != nil {
-		return err
+		return fmt.Errorf("client Publish, %v", err)
 	}
 	return nil
 }
@@ -64,7 +102,10 @@ func (c *Conn) Subscribe(subject string, handle Handler) error {
 	result := fmt.Sprintf("SUB %s %d\r\n", subject, c.ps.nextSub)
 	log.Debug(result)
 	_, err := c.conn.Write([]byte(result))
-	return err
+	if err != nil {
+		return fmt.Errorf("client Subscribe, %v", err)
+	}
+	return nil
 }
 
 // QueueSubscribe as subscribe, but the server will randomly load balance among the handlers in the queue
@@ -74,7 +115,10 @@ func (c *Conn) QueueSubscribe(subject string, queue string, handle Handler) erro
 	result := fmt.Sprintf("SUB %s %d %d %s\r\n", subject, c.ps.nextSub, -1, queue)
 	log.Debug(result)
 	_, err := c.conn.Write([]byte(result))
-	return err
+	if err != nil {
+		return fmt.Errorf("client QueueSubscribe, %v", err)
+	}
+	return nil
 }
 
 // Request as publish, but blocks until receives a response from a subscriber
@@ -92,7 +136,7 @@ func (c *Conn) Request(subject string, msg []byte) (*Message, error) {
 	log.Debug(result)
 	_, err := c.conn.Write([]byte(result))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("client Request SUB, %v", err)
 	}
 
 	log.Debug(reply)
@@ -100,7 +144,7 @@ func (c *Conn) Request(subject string, msg []byte) (*Message, error) {
 	log.Debug(string(bResult))
 	_, err = c.conn.Write(bResult)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("client Request PUB, %v", err)
 	}
 
 	timeout := time.NewTimer(10 * time.Minute)
@@ -117,7 +161,7 @@ func (c *Conn) PublishRequest(subject string, reply string, msg []byte) error {
 	log.Debug(string(result))
 	_, err := c.conn.Write(result)
 	if err != nil {
-		return err
+		return fmt.Errorf("client PublishRequest, %v", err)
 	}
 
 	return nil

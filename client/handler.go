@@ -2,8 +2,9 @@ package client
 
 import (
 	"bytes"
-	"net"
+	"context"
 	"strconv"
+	"strings"
 
 	"github.com/mateusf777/pubsub/domain"
 
@@ -11,14 +12,11 @@ import (
 	psnet "github.com/mateusf777/pubsub/net"
 )
 
-func handleConnection(c *Conn, ps *pubSub) {
-	defer func(c net.Conn) {
-		err := c.Close()
-		if err != nil {
-			log.Error("%v\n", err)
-		}
-		log.Info("Closed connection %s\n", c.RemoteAddr().String())
-	}(c.conn)
+func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
+	defer func(c *Conn) {
+		log.Info("Closing connection %s\n", c.conn.RemoteAddr().String())
+		c.drained <- struct{}{}
+	}(c)
 
 	closeHandler := make(chan bool)
 	stopTimeout := make(chan bool)
@@ -28,12 +26,19 @@ func handleConnection(c *Conn, ps *pubSub) {
 	buffer := make([]byte, 1024)
 	dataCh := make(chan []byte, 10)
 
-	go func() {
-		for {
-			go psnet.Read(c.conn, buffer, dataCh)
+	go func(ctx context.Context) {
 
-			accumulator := psnet.Empty
-			for netData := range dataCh {
+		go psnet.Read(c.conn, buffer, dataCh)
+		accumulator := psnet.Empty
+
+		for {
+			select {
+			case <-ctx.Done():
+				stopTimeout <- true
+				closeHandler <- true
+				log.Info("done!")
+				return
+			case netData := <-dataCh:
 				log.Debug("Received %v", netData)
 				timeoutReset <- true
 
@@ -78,20 +83,22 @@ func handleConnection(c *Conn, ps *pubSub) {
 				if bytes.Compare(result, psnet.Empty) != 0 {
 					_, err := c.conn.Write(result)
 					if err != nil {
-						log.Error("%v\n", err)
+						if strings.Contains(err.Error(), "broken pipe") {
+							continue
+						}
+						log.Error("client handleConnection, %v\n", err)
 					}
 				}
 
 				accumulator = psnet.Empty
-
 			}
-
 		}
-	}()
+	}(ctx)
 
 	go psnet.MonitorTimeout(c.conn, timeoutReset, stopTimeout, closeHandler)
 
 	<-closeHandler
+
 	return
 }
 
