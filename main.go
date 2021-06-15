@@ -5,9 +5,9 @@ import (
 	"os"
 	"time"
 
-	psnet "github.com/mateusf777/pubsub/net"
-
 	"github.com/mateusf777/pubsub/log"
+
+	psnet "github.com/mateusf777/pubsub/net"
 
 	"github.com/mateusf777/pubsub/server"
 )
@@ -18,12 +18,13 @@ const defaultAddress = "127.0.0.1:9999"
 
 func main() {
 	rand.Seed(time.Now().Unix())
-	log.SetLevel(log.INFO)
 
 	address := os.Getenv("PUBSUB_ADDRESS")
 	if address == string(psnet.Empty) {
 		address = defaultAddress
 	}
 
-	server.Run(address)
+	s := server.New()
+	s.SetLogLevel(log.INFO)
+	s.Run(address)
 }

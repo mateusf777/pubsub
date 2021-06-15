@@ -10,22 +10,21 @@ import (
 	psnet "github.com/mateusf777/pubsub/net"
 
 	"github.com/mateusf777/pubsub/domain"
-	"github.com/mateusf777/pubsub/log"
 )
 
-func handleConnection(c net.Conn, ps *domain.PubSub) {
+func (s Server) handleConnection(c net.Conn, ps *domain.PubSub) {
 	defer func(c net.Conn) {
 		err := c.Close()
 		if err != nil {
-			log.Error("%v\n", err)
+			s.log.Error("%v\n", err)
 		}
-		log.Info("Closed connection %s\n", c.RemoteAddr().String())
+		s.log.Info("Closed connection %s\n", c.RemoteAddr().String())
 	}(c)
 
 	closeHandler := make(chan bool)
 	stopTimeout := make(chan bool)
 
-	log.Info("Serving %s\n", c.RemoteAddr().String())
+	s.log.Info("Serving %s\n", c.RemoteAddr().String())
 	client := c.RemoteAddr().String()
 
 	timeoutReset := make(chan bool)
@@ -52,7 +51,7 @@ func handleConnection(c net.Conn, ps *domain.PubSub) {
 				var result []byte
 				switch {
 				case bytes.Compare(bytes.ToUpper(temp), psnet.OpStop) == 0, bytes.Compare(temp, psnet.ControlC) == 0:
-					log.Info("Closing connection with %s\n", c.RemoteAddr().String())
+					s.log.Info("Closing connection with %s\n", c.RemoteAddr().String())
 					stopTimeout <- true
 					closeHandler <- true
 					break Loop
@@ -71,11 +70,11 @@ func handleConnection(c net.Conn, ps *domain.PubSub) {
 						accumulator = temp
 						continue
 					}
-					result = handlePub(c, ps, client, temp)
+					result = s.handlePub(c, ps, client, temp)
 
 				case bytes.HasPrefix(bytes.ToUpper(temp), psnet.OpSub):
-					log.Debug("sub: %v", temp)
-					result = handleSub(c, ps, client, temp)
+					s.log.Debug("sub: %v", temp)
+					result = s.handleSub(c, ps, client, temp)
 
 				case bytes.HasPrefix(bytes.ToUpper(temp), psnet.OpUnsub):
 					result = handleUnsub(ps, client, temp)
@@ -91,7 +90,7 @@ func handleConnection(c net.Conn, ps *domain.PubSub) {
 					if strings.Contains(err.Error(), "broken pipe") || strings.Contains(err.Error(), "connection reset by peer") {
 						continue
 					}
-					log.Error("server handler handleConnection, %v\n", err)
+					s.log.Error("server handler handleConnection, %v\n", err)
 				}
 
 				// reset accumulator
@@ -107,7 +106,7 @@ func handleConnection(c net.Conn, ps *domain.PubSub) {
 	return
 }
 
-func handlePub(c net.Conn, ps *domain.PubSub, client string, received []byte) []byte {
+func (s Server) handlePub(c net.Conn, ps *domain.PubSub, client string, received []byte) []byte {
 	// default result
 	result := psnet.OK
 
@@ -126,10 +125,10 @@ func handlePub(c net.Conn, ps *domain.PubSub, client string, received []byte) []
 		reply := args[2]
 		err := ps.Subscribe(string(reply), client, func(msg domain.Message) {
 			result = domain.Join(psnet.OpMsg, psnet.Space, []byte(msg.Subject), psnet.Space, []byte(msg.Reply), psnet.CRLF, msg.Data, psnet.CRLF)
-			log.Debug("pub sending %s", result)
+			s.log.Debug("pub sending %s", result)
 			_, err := c.Write(result)
 			if err != nil {
-				log.Error("server handler handlePub, %v\n", err)
+				s.log.Error("server handler handlePub, %v\n", err)
 			}
 
 		}, domain.WithMaxMsg(1))
@@ -167,7 +166,7 @@ func handleUnsub(ps *domain.PubSub, client string, received []byte) []byte {
 	return result
 }
 
-func handleSub(c net.Conn, ps *domain.PubSub, client string, received []byte) []byte {
+func (s Server) handleSub(c net.Conn, ps *domain.PubSub, client string, received []byte) []byte {
 	// default result
 	result := psnet.OK
 
@@ -192,9 +191,9 @@ func handleSub(c net.Conn, ps *domain.PubSub, client string, received []byte) []
 
 	// dispatch
 	err := ps.Subscribe(string(args[1]), client, func(msg domain.Message) {
-		err := sendMsg(c, id, msg)
+		err := s.sendMsg(c, id, msg)
 		if err != nil {
-			log.Error("%v\n", err)
+			s.log.Error("%v\n", err)
 		}
 	}, opts...)
 	if err != nil {
@@ -204,9 +203,9 @@ func handleSub(c net.Conn, ps *domain.PubSub, client string, received []byte) []
 	return result
 }
 
-func sendMsg(conn net.Conn, id int, msg domain.Message) error {
+func (s Server) sendMsg(conn net.Conn, id int, msg domain.Message) error {
 	result := domain.Join(psnet.OpMsg, psnet.Space, []byte(msg.Subject), psnet.Space, []byte(strconv.Itoa(id)), psnet.Space, []byte(msg.Reply), psnet.CRLF, msg.Data, psnet.CRLF)
-	log.Debug("%s", result)
+	s.log.Debug("%s", result)
 	_, err := conn.Write(result)
 	if err != nil {
 		return fmt.Errorf("server handler sendMsg, %v", err)

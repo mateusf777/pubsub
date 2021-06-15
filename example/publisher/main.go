@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	"github.com/mateusf777/pubsub/client"
-	"github.com/mateusf777/pubsub/log"
+	logger "github.com/mateusf777/pubsub/log"
 )
 
 const (
@@ -14,8 +14,6 @@ const (
 )
 
 func main() {
-	log.SetLevel(log.INFO)
-
 	wg := &sync.WaitGroup{}
 	for i := 0; i < routines; i++ {
 		wg.Add(1)
@@ -26,13 +24,19 @@ func main() {
 }
 
 func send(wg *sync.WaitGroup) {
+	log := logger.New()
+	log.Level = logger.INFO
+
 	conn, err := client.Connect(":9999")
 	if err != nil {
 		log.Error("%v", err)
 		return
 	}
 	defer wg.Done()
-	defer conn.Drain()
+	defer func() {
+		conn.Drain()
+		log.Info("Connection closed")
+	}()
 
 	log.Info("start sending")
 	for i := 0; i < messages; i++ {

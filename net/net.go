@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/mateusf777/pubsub/domain"
-	"github.com/mateusf777/pubsub/log"
 )
 
 const TTL = 5 * time.Second
@@ -79,13 +78,11 @@ Timeout:
 			timeoutCount = 0
 
 		case <-stopTimeout:
-			log.Debug("Stop timeout process %s\n", c.RemoteAddr().String())
 			break Timeout
 
 		case <-timeout.C:
 			timeoutCount++
 			if timeoutCount > 2 {
-				log.Info("Timeout %s\n", c.RemoteAddr().String())
 				closeHandler <- true
 				break Timeout
 			}
@@ -93,11 +90,9 @@ Timeout:
 			_, err := c.Write(domain.Join(OpPing, CRLF))
 			if err != nil {
 				if strings.Contains(err.Error(), "broken pipe") {
-					log.Info("Connection closed, MonitorTimeout %s\n", c.RemoteAddr().String())
 					closeHandler <- true
 					return
 				}
-				log.Error("net MonitorTimeout, %v\n", err)
 			}
 		}
 	}

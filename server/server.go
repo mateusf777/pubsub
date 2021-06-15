@@ -10,27 +10,42 @@ import (
 	"github.com/mateusf777/pubsub/log"
 )
 
+type Server struct {
+	log log.Logger
+}
+
+func New() Server {
+	return Server{
+		log: log.New().WithContext("pubsub server"),
+	}
+}
+
+func (s *Server) SetLogLevel(level log.Level) {
+	s.log.Level = level
+}
+
 // Run stars to listen in the given address
 // Ex: server.Run("localhost:9999")
-func Run(address string) {
+func (s Server) Run(address string) {
 	l, err := net.Listen("tcp4", address)
 	if err != nil {
-		log.Error("%v\n", err)
+		s.log.Error("%v\n", err)
 		return
 	}
 	defer l.Close()
 
-	go acceptClients(l)
+	go s.acceptClients(l)
 
-	log.Info("PubSub accepting connections at %s", address)
+	s.log.Info("PubSub accepting connections at %s", address)
 	psnet.Wait()
-	log.Info("Stopping PubSub")
+	s.log.Info("Stopping PubSub")
 }
 
 // Starts a concurrent handler for each connection
-func acceptClients(l net.Listener) {
+func (s Server) acceptClients(l net.Listener) {
 	ps := domain.NewPubSub()
 	defer ps.Stop()
+	ps.SetLogLevel(s.log.Level)
 
 	for {
 		c, err := l.Accept()
@@ -39,10 +54,10 @@ func acceptClients(l net.Listener) {
 			if strings.Contains(err.Error(), psnet.CloseErr) {
 				return
 			}
-			log.Error("%v\n", err)
+			s.log.Error("%v\n", err)
 			return
 		}
 
-		go handleConnection(c, ps)
+		go s.handleConnection(c, ps)
 	}
 }

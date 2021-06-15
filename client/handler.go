@@ -8,13 +8,12 @@ import (
 
 	"github.com/mateusf777/pubsub/domain"
 
-	"github.com/mateusf777/pubsub/log"
 	psnet "github.com/mateusf777/pubsub/net"
 )
 
 func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 	defer func(c *Conn) {
-		log.Info("Closing connection %s\n", c.conn.RemoteAddr().String())
+		c.log.Info("Closing connection %s\n", c.conn.RemoteAddr().String())
 		c.drained <- struct{}{}
 	}(c)
 
@@ -36,10 +35,10 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 			case <-ctx.Done():
 				stopTimeout <- true
 				closeHandler <- true
-				log.Info("done!")
+				c.log.Info("done!")
 				return
 			case netData := <-dataCh:
-				log.Debug("Received %v", netData)
+				c.log.Debug("Received %v", netData)
 				timeoutReset <- true
 
 				temp := bytes.TrimSpace(netData)
@@ -61,16 +60,16 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 					break
 
 				case bytes.Compare(bytes.ToUpper(temp), psnet.OpERR) == 0:
-					log.Error("%s", temp)
+					c.log.Error("%s", temp)
 					break
 
 				case bytes.HasPrefix(bytes.ToUpper(temp), psnet.OpMsg):
-					log.Debug("in opMsg...")
+					c.log.Debug("in opMsg...")
 					if bytes.Compare(bytes.ToUpper(accumulator), psnet.Empty) == 0 {
 						accumulator = temp
 						continue
 					}
-					log.Debug("calling handleMsg")
+					c.log.Debug("calling handleMsg")
 					handleMsg(c, ps, temp)
 
 				default:
@@ -86,7 +85,7 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 						if strings.Contains(err.Error(), "broken pipe") {
 							continue
 						}
-						log.Error("client handleConnection, %v\n", err)
+						c.log.Error("client handleConnection, %v\n", err)
 					}
 				}
 
@@ -103,7 +102,7 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 }
 
 func handleMsg(c *Conn, ps *pubSub, received []byte) {
-	log.Debug("handleMsg, %s", received)
+	c.log.Debug("handleMsg, %s", received)
 	parts := bytes.Split(received, psnet.CRLF)
 	args := bytes.Split(parts[0], psnet.Space)
 	msg := parts[1]

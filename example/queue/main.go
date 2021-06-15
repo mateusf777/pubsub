@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/mateusf777/pubsub/client"
-	"github.com/mateusf777/pubsub/log"
+	logger "github.com/mateusf777/pubsub/log"
 )
 
 const (
@@ -14,7 +14,8 @@ const (
 )
 
 func main() {
-	log.SetLevel(log.INFO)
+	log := logger.New()
+	log.Level = logger.INFO
 
 	conn, err := client.Connect(":9999")
 	if err != nil {
@@ -22,6 +23,7 @@ func main() {
 		return
 	}
 	defer conn.Close()
+	conn.SetLogLevel(logger.DEBUG)
 
 	log.Info("Launching %d queue subscribers", queue)
 

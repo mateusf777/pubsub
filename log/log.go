@@ -5,7 +5,7 @@ import (
 	logger "log"
 )
 
-const logTemplate = "[%s] %v"
+const logTemplate = "[%s]-%s- %v"
 
 type Level struct {
 	value    string
@@ -22,27 +22,37 @@ var (
 	DEBUG = Level{"DEBUG", 2}
 )
 
-var logLevel = DEBUG
-
-func SetLevel(level Level) {
-	logLevel = level
+type Logger struct {
+	context string
+	Level   Level
 }
 
-func log(level Level, format string, v ...interface{}) {
-	msg := fmt.Sprintf(format, v...)
-	if level.priority <= logLevel.priority {
-		logger.Printf(logTemplate, level, msg)
+func New() Logger {
+	return Logger{
+		Level: Level{"", -1},
 	}
 }
 
-func Debug(format string, v ...interface{}) {
-	log(DEBUG, format, v...)
+func (l Logger) WithContext(context string) Logger {
+	l.context = context
+	return l
 }
 
-func Info(format string, v ...interface{}) {
-	log(INFO, format, v...)
+func (l Logger) Debug(format string, v ...interface{}) {
+	l.log(DEBUG, format, v...)
 }
 
-func Error(format string, v ...interface{}) {
-	log(ERROR, format, v...)
+func (l Logger) Info(format string, v ...interface{}) {
+	l.log(INFO, format, v...)
+}
+
+func (l Logger) Error(format string, v ...interface{}) {
+	l.log(ERROR, format, v...)
+}
+
+func (l Logger) log(level Level, format string, v ...interface{}) {
+	msg := fmt.Sprintf(format, v...)
+	if level.priority <= l.Level.priority {
+		logger.Printf(logTemplate, level, l.context, msg)
+	}
 }

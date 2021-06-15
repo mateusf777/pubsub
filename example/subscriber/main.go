@@ -7,11 +7,12 @@ import (
 	psnet "github.com/mateusf777/pubsub/net"
 
 	"github.com/mateusf777/pubsub/client"
-	"github.com/mateusf777/pubsub/log"
+	logger "github.com/mateusf777/pubsub/log"
 )
 
 func main() {
-	log.SetLevel(log.INFO)
+	log := logger.New()
+	log.Level = logger.INFO
 
 	conn, err := client.Connect(":9999")
 	if err != nil {

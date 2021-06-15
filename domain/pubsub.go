@@ -16,6 +16,7 @@ type PubSub struct {
 	handlersMap *sync.Map //map[string][]HandlerSubject
 	groupsMap   *sync.Map //map[string][]HandlerSubject
 	running     bool
+	log         log.Logger
 }
 
 // Message routed from a PUB op to handlers previously registerer by SUB ops
@@ -45,10 +46,15 @@ func NewPubSub() *PubSub {
 		msgCh:       make(chan Message),
 		handlersMap: new(sync.Map),
 		running:     false,
+		log:         log.New().WithContext("pubsub domain"),
 	}
 	go ps.run()
 
 	return &ps
+}
+
+func (ps *PubSub) SetLogLevel(level log.Level) {
+	ps.log.Level = level
 }
 
 // Stop the PubSub router
@@ -188,11 +194,11 @@ func (ps *PubSub) UnsubAll(client string) {
 // It's started by the NewPubSub
 func (ps *PubSub) run() {
 
-	log.Info("Message router started")
+	ps.log.Info("Message router started")
 	ps.running = true
 
 	defer func() {
-		log.Info("Message router stopped")
+		ps.log.Info("Message router stopped")
 		ps.running = false
 	}()
 
