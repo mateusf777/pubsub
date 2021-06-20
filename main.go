@@ -24,7 +24,6 @@ func main() {
 		address = defaultAddress
 	}
 
-	s := server.New()
-	s.SetLogLevel(log.INFO)
+	s := server.New(server.LogLevel(log.INFO))
 	s.Run(address)
 }

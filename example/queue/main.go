@@ -17,13 +17,12 @@ func main() {
 	log := logger.New()
 	log.Level = logger.INFO
 
-	conn, err := client.Connect(":9999")
+	conn, err := client.Connect(":9999", client.LogLevel(logger.INFO))
 	if err != nil {
 		log.Error("%v", err)
 		return
 	}
 	defer conn.Close()
-	conn.SetLogLevel(logger.DEBUG)
 
 	log.Info("Launching %d queue subscribers", queue)
 

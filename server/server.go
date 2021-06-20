@@ -14,14 +14,24 @@ type Server struct {
 	log log.Logger
 }
 
-func New() Server {
-	return Server{
-		log: log.New().WithContext("pubsub server"),
+type Opt func(s *Server)
+
+func LogLevel(level log.Level) Opt {
+	return func(s *Server) {
+		s.log.Level = level
 	}
 }
 
-func (s *Server) SetLogLevel(level log.Level) {
-	s.log.Level = level
+func New(opts ...Opt) Server {
+	s := Server{
+		log: log.New().WithContext("pubsub server"),
+	}
+
+	for _, opt := range opts {
+		opt(&s)
+	}
+
+	return s
 }
 
 // Run stars to listen in the given address

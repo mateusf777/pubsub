@@ -25,8 +25,16 @@ type Conn struct {
 	log       log.Logger
 }
 
+type Opt func(c *Conn)
+
+func LogLevel(level log.Level) Opt {
+	return func(c *Conn) {
+		c.log.Level = level
+	}
+}
+
 // Connect makes the connection with the server
-func Connect(address string) (*Conn, error) {
+func Connect(address string, opts ...Opt) (*Conn, error) {
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
 		return nil, err
@@ -42,12 +50,12 @@ func Connect(address string) (*Conn, error) {
 		log:     log.New().WithContext("pubsub client"),
 	}
 
+	for _, opt := range opts {
+		opt(nc)
+	}
+
 	go handleConnection(nc, ctx, ps)
 	return nc, nil
-}
-
-func (c *Conn) SetLogLevel(level log.Level) {
-	c.log.Level = level
 }
 
 // Close sends the "stop" operation so the server can clean up the resources
