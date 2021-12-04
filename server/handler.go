@@ -7,8 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	psnet "github.com/mateusf777/pubsub/net"
-
 	"github.com/mateusf777/pubsub/domain"
 )
 
@@ -33,57 +31,57 @@ func (s Server) handleConnection(c net.Conn, ps *domain.PubSub) {
 	dataCh := make(chan []byte, 100)
 
 	go func() {
-		go psnet.Read(c, buffer, dataCh)
+		go domain.Read(c, buffer, dataCh)
 	Loop:
 		for {
 
 			// dispatch
-			accumulator := psnet.Empty
+			accumulator := domain.Empty
 			for netData := range dataCh {
 				timeoutReset <- true
 
 				temp := bytes.TrimSpace(netData)
 
-				if bytes.Compare(accumulator, psnet.Empty) != 0 {
-					temp = domain.Join(accumulator, psnet.CRLF, temp)
+				if !domain.Equals(accumulator, domain.Empty) {
+					temp = domain.Join(accumulator, domain.CRLF, temp)
 				}
 
 				var result []byte
 				switch {
-				case bytes.Compare(bytes.ToUpper(temp), psnet.OpStop) == 0, bytes.Compare(temp, psnet.ControlC) == 0:
+				case domain.Equals(bytes.ToUpper(temp), domain.OpStop), domain.Equals(temp, domain.ControlC):
 					s.log.Info("Closing connection with %s\n", c.RemoteAddr().String())
 					stopTimeout <- true
 					closeHandler <- true
 					break Loop
 
-				case bytes.Compare(bytes.ToUpper(temp), psnet.OpPing) == 0:
-					result = domain.Join(psnet.OpPong, psnet.CRLF)
+				case domain.Equals(bytes.ToUpper(temp), domain.OpPing):
+					result = domain.Join(domain.OpPong, domain.CRLF)
 					break
 
-				case bytes.Compare(bytes.ToUpper(temp), psnet.OpPong) == 0:
-					result = psnet.OK
+				case domain.Equals(bytes.ToUpper(temp), domain.OpPong):
+					result = domain.OK
 					break
 
-				case bytes.HasPrefix(bytes.ToUpper(temp), psnet.OpPub):
+				case bytes.HasPrefix(bytes.ToUpper(temp), domain.OpPub):
 					// uses accumulator to get next line
-					if bytes.Compare(bytes.ToUpper(accumulator), psnet.Empty) == 0 {
+					if domain.Equals(bytes.ToUpper(accumulator), domain.Empty) {
 						accumulator = temp
 						continue
 					}
 					result = s.handlePub(c, ps, client, temp)
 
-				case bytes.HasPrefix(bytes.ToUpper(temp), psnet.OpSub):
+				case bytes.HasPrefix(bytes.ToUpper(temp), domain.OpSub):
 					s.log.Debug("sub: %v", temp)
 					result = s.handleSub(c, ps, client, temp)
 
-				case bytes.HasPrefix(bytes.ToUpper(temp), psnet.OpUnsub):
+				case bytes.HasPrefix(bytes.ToUpper(temp), domain.OpUnsub):
 					result = handleUnsub(ps, client, temp)
 
 				default:
-					if bytes.Compare(temp, psnet.Empty) == 0 {
+					if domain.Equals(temp, domain.Empty) {
 						continue
 					}
-					result = domain.Join([]byte("-ERR invalid protocol"), psnet.CRLF)
+					result = domain.Join([]byte("-ERR invalid protocol"), domain.CRLF)
 				}
 				_, err := c.Write(result)
 				if err != nil {
@@ -94,12 +92,12 @@ func (s Server) handleConnection(c net.Conn, ps *domain.PubSub) {
 				}
 
 				// reset accumulator
-				accumulator = psnet.Empty
+				accumulator = domain.Empty
 			}
 		}
 	}()
 
-	go psnet.MonitorTimeout(c, timeoutReset, stopTimeout, closeHandler)
+	go domain.MonitorTimeout(c, timeoutReset, stopTimeout, closeHandler)
 
 	<-closeHandler
 	ps.UnsubAll(client)
@@ -108,11 +106,11 @@ func (s Server) handleConnection(c net.Conn, ps *domain.PubSub) {
 
 func (s Server) handlePub(c net.Conn, ps *domain.PubSub, client string, received []byte) []byte {
 	// default result
-	result := psnet.OK
+	result := domain.OK
 
 	// parse
-	parts := bytes.Split(received, psnet.CRLF)
-	args := bytes.Split(parts[0], psnet.Space)
+	parts := bytes.Split(received, domain.CRLF)
+	args := bytes.Split(parts[0], domain.Space)
 	msg := parts[1]
 
 	if len(args) < 2 || len(args) > 3 {
@@ -124,7 +122,7 @@ func (s Server) handlePub(c net.Conn, ps *domain.PubSub, client string, received
 	if len(args) == 3 {
 		reply := args[2]
 		err := ps.Subscribe(string(reply), client, func(msg domain.Message) {
-			result = domain.Join(psnet.OpMsg, psnet.Space, []byte(msg.Subject), psnet.Space, []byte(msg.Reply), psnet.CRLF, msg.Data, psnet.CRLF)
+			result = domain.Join(domain.OpMsg, domain.Space, []byte(msg.Subject), domain.Space, []byte(msg.Reply), domain.CRLF, msg.Data, domain.CRLF)
 			s.log.Debug("pub sending %s", result)
 			_, err := c.Write(result)
 			if err != nil {
@@ -133,7 +131,7 @@ func (s Server) handlePub(c net.Conn, ps *domain.PubSub, client string, received
 
 		}, domain.WithMaxMsg(1))
 		if err != nil {
-			return domain.Join(psnet.OpERR, psnet.Space, []byte(err.Error()))
+			return domain.Join(domain.OpERR, domain.Space, []byte(err.Error()))
 		}
 		opts = append(opts, domain.WithReply(string(reply)))
 	}
@@ -141,7 +139,7 @@ func (s Server) handlePub(c net.Conn, ps *domain.PubSub, client string, received
 	// dispatch
 	err := ps.Publish(string(args[1]), msg, opts...)
 	if err != nil {
-		return domain.Join(psnet.OpERR, psnet.Space, []byte(err.Error()))
+		return domain.Join(domain.OpERR, domain.Space, []byte(err.Error()))
 	}
 
 	return result
@@ -149,10 +147,10 @@ func (s Server) handlePub(c net.Conn, ps *domain.PubSub, client string, received
 
 func handleUnsub(ps *domain.PubSub, client string, received []byte) []byte {
 	// default result
-	result := psnet.OK
+	result := domain.OK
 
 	// parse
-	args := bytes.Split(received, psnet.Space)
+	args := bytes.Split(received, domain.Space)
 	if len(args) != 3 {
 		return []byte("-ERR should be UNSUB <subject> <id>\n")
 	}
@@ -161,17 +159,17 @@ func handleUnsub(ps *domain.PubSub, client string, received []byte) []byte {
 	// dispatch
 	err := ps.Unsubscribe(string(args[1]), client, id)
 	if err != nil {
-		return domain.Join(psnet.OpERR, psnet.Space, []byte(err.Error()))
+		return domain.Join(domain.OpERR, domain.Space, []byte(err.Error()))
 	}
 	return result
 }
 
 func (s Server) handleSub(c net.Conn, ps *domain.PubSub, client string, received []byte) []byte {
 	// default result
-	result := psnet.OK
+	result := domain.OK
 
 	// parse
-	args := bytes.Split(received, psnet.Space)
+	args := bytes.Split(received, domain.Space)
 	if len(args) < 3 || len(args) > 5 {
 		return []byte("-ERR should be SUB <subject> <id> [max-msg] [group]\n")
 	}
@@ -197,14 +195,14 @@ func (s Server) handleSub(c net.Conn, ps *domain.PubSub, client string, received
 		}
 	}, opts...)
 	if err != nil {
-		return domain.Join(psnet.OpERR, psnet.Space, []byte(err.Error()))
+		return domain.Join(domain.OpERR, domain.Space, []byte(err.Error()))
 	}
 
 	return result
 }
 
 func (s Server) sendMsg(conn net.Conn, id int, msg domain.Message) error {
-	result := domain.Join(psnet.OpMsg, psnet.Space, []byte(msg.Subject), psnet.Space, []byte(strconv.Itoa(id)), psnet.Space, []byte(msg.Reply), psnet.CRLF, msg.Data, psnet.CRLF)
+	result := domain.Join(domain.OpMsg, domain.Space, []byte(msg.Subject), domain.Space, []byte(strconv.Itoa(id)), domain.Space, []byte(msg.Reply), domain.CRLF, msg.Data, domain.CRLF)
 	s.log.Debug("%s", result)
 	_, err := conn.Write(result)
 	if err != nil {

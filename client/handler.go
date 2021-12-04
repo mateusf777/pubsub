@@ -7,8 +7,6 @@ import (
 	"strings"
 
 	"github.com/mateusf777/pubsub/domain"
-
-	psnet "github.com/mateusf777/pubsub/net"
 )
 
 func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
@@ -27,8 +25,8 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 
 	go func(ctx context.Context) {
 
-		go psnet.Read(c.conn, buffer, dataCh)
-		accumulator := psnet.Empty
+		go domain.Read(c.conn, buffer, dataCh)
+		accumulator := domain.Empty
 
 		for {
 			select {
@@ -43,29 +41,29 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 
 				temp := bytes.TrimSpace(netData)
 
-				if bytes.Compare(accumulator, psnet.Empty) != 0 {
-					temp = domain.Join(accumulator, psnet.CRLF, temp)
+				if !domain.Equals(accumulator, domain.Empty) {
+					temp = domain.Join(accumulator, domain.CRLF, temp)
 				}
 
 				var result []byte
 				switch {
-				case bytes.Compare(bytes.ToUpper(temp), psnet.OpPing) == 0:
-					result = domain.Join(psnet.OpPong, psnet.CRLF)
+				case domain.Equals(bytes.ToUpper(temp), domain.OpPing):
+					result = domain.Join(domain.OpPong, domain.CRLF)
 					break
 
-				case bytes.Compare(bytes.ToUpper(temp), psnet.OpPong) == 0:
+				case domain.Equals(bytes.ToUpper(temp), domain.OpPong):
 					break
 
-				case bytes.Compare(bytes.ToUpper(temp), psnet.OpOK) == 0:
+				case domain.Equals(bytes.ToUpper(temp), domain.OpOK):
 					break
 
-				case bytes.Compare(bytes.ToUpper(temp), psnet.OpERR) == 0:
+				case domain.Equals(bytes.ToUpper(temp), domain.OpERR):
 					c.log.Error("%s", temp)
 					break
 
-				case bytes.HasPrefix(bytes.ToUpper(temp), psnet.OpMsg):
+				case bytes.HasPrefix(bytes.ToUpper(temp), domain.OpMsg):
 					c.log.Debug("in opMsg...")
-					if bytes.Compare(bytes.ToUpper(accumulator), psnet.Empty) == 0 {
+					if domain.Equals(bytes.ToUpper(accumulator), domain.Empty) {
 						accumulator = temp
 						continue
 					}
@@ -73,13 +71,13 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 					handleMsg(c, ps, temp)
 
 				default:
-					if bytes.Compare(temp, psnet.Empty) == 0 {
+					if domain.Equals(temp, domain.Empty) {
 						continue
 					}
-					result = psnet.Empty
+					result = domain.Empty
 				}
 
-				if bytes.Compare(result, psnet.Empty) != 0 {
+				if !domain.Equals(result, domain.Empty) {
 					_, err := c.conn.Write(result)
 					if err != nil {
 						if strings.Contains(err.Error(), "broken pipe") {
@@ -89,12 +87,12 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 					}
 				}
 
-				accumulator = psnet.Empty
+				accumulator = domain.Empty
 			}
 		}
 	}(ctx)
 
-	go psnet.MonitorTimeout(c.conn, timeoutReset, stopTimeout, closeHandler)
+	go domain.MonitorTimeout(c.conn, timeoutReset, stopTimeout, closeHandler)
 
 	<-closeHandler
 
@@ -103,8 +101,8 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 
 func handleMsg(c *Conn, ps *pubSub, received []byte) {
 	c.log.Debug("handleMsg, %s", received)
-	parts := bytes.Split(received, psnet.CRLF)
-	args := bytes.Split(parts[0], psnet.Space)
+	parts := bytes.Split(received, domain.CRLF)
+	args := bytes.Split(parts[0], domain.Space)
 	msg := parts[1]
 	if len(args) < 3 || len(args) > 4 {
 		return //"-ERR should be MSG <subject> <id> [reply-to]\n"

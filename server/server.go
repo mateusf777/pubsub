@@ -4,8 +4,6 @@ import (
 	"net"
 	"strings"
 
-	psnet "github.com/mateusf777/pubsub/net"
-
 	"github.com/mateusf777/pubsub/domain"
 	"github.com/mateusf777/pubsub/log"
 )
@@ -47,7 +45,7 @@ func (s Server) Run(address string) {
 	go s.acceptClients(l)
 
 	s.log.Info("PubSub accepting connections at %s", address)
-	psnet.Wait()
+	domain.Wait()
 	s.log.Info("Stopping PubSub")
 }
 
@@ -61,7 +59,7 @@ func (s Server) acceptClients(l net.Listener) {
 		c, err := l.Accept()
 		if err != nil {
 			// Todo: better handle connection to stop hiding errors like this
-			if strings.Contains(err.Error(), psnet.CloseErr) {
+			if strings.Contains(err.Error(), domain.CloseErr) {
 				return
 			}
 			s.log.Error("%v\n", err)

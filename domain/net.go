@@ -1,4 +1,4 @@
-package net
+package domain
 
 import (
 	"bytes"
@@ -9,8 +9,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-	"github.com/mateusf777/pubsub/domain"
 )
 
 const TTL = 5 * time.Second
@@ -32,10 +30,10 @@ var (
 	CRLF     = []byte{'\r', '\n'}
 	Space    = []byte{' '}
 	Empty    []byte
-	OK       = domain.Join(OpOK, CRLF)
+	OK       = Join(OpOK, CRLF)
 	ControlC = []byte{255, 244, 255, 253, 6}
-	Stop     = domain.Join(OpStop, CRLF)
-	Ping     = domain.Join(OpPing, CRLF)
+	Stop     = Join(OpStop, CRLF)
+	Ping     = Join(OpPing, CRLF)
 )
 
 const CloseErr = "use of closed network connection"
@@ -48,11 +46,11 @@ func Read(c net.Conn, buffer []byte, dataCh chan []byte) {
 			return
 		}
 
-		toBeSplit := domain.Join(accumulator, buffer[:n])
+		toBeSplit := Join(accumulator, buffer[:n])
 		messages := bytes.Split(toBeSplit, CRLF)
 		accumulator = Empty
 
-		if !bytes.HasSuffix(buffer[:n], CRLF) && bytes.Compare(buffer[:n], ControlC) != 0 {
+		if !bytes.HasSuffix(buffer[:n], CRLF) && !Equals(buffer[:n], ControlC) {
 			accumulator = messages[len(messages)-1]
 			messages = messages[:len(messages)-1]
 		}
@@ -87,7 +85,7 @@ Timeout:
 				break Timeout
 			}
 
-			_, err := c.Write(domain.Join(OpPing, CRLF))
+			_, err := c.Write(Join(OpPing, CRLF))
 			if err != nil {
 				if strings.Contains(err.Error(), "broken pipe") {
 					closeHandler <- true
@@ -103,4 +101,8 @@ func Wait() {
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	<-sigs
 	fmt.Println()
+}
+
+func Equals(b1 []byte, b2 []byte) bool {
+	return bytes.Compare(b1, b2) == 0
 }

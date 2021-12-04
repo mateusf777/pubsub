@@ -10,8 +10,6 @@ import (
 
 	"github.com/mateusf777/pubsub/domain"
 
-	psnet "github.com/mateusf777/pubsub/net"
-
 	"github.com/mateusf777/pubsub/log"
 )
 
@@ -60,14 +58,14 @@ func Connect(address string, opts ...Opt) (*Conn, error) {
 
 // Close sends the "stop" operation so the server can clean up the resources
 func (c *Conn) Close() {
-	_, err := c.conn.Write(psnet.Stop)
+	_, err := c.conn.Write(domain.Stop)
 	if err != nil {
 		if !strings.Contains(err.Error(), "broken pipe") {
 			c.log.Error("client close, %v", err)
 		}
 	} else {
 		for {
-			_, err := c.conn.Write(psnet.Ping)
+			_, err := c.conn.Write(domain.Ping)
 			if err != nil {
 				continue
 			}
@@ -82,9 +80,9 @@ func (c *Conn) Close() {
 
 // Drain ...
 func (c *Conn) Drain() {
-	_, _ = c.conn.Write(psnet.Stop)
+	_, _ = c.conn.Write(domain.Stop)
 	for {
-		_, err := c.conn.Write(psnet.Ping)
+		_, err := c.conn.Write(domain.Ping)
 		if err == nil {
 			continue
 		}
@@ -98,7 +96,7 @@ func (c *Conn) Drain() {
 
 // Publish sends a message for a subject
 func (c *Conn) Publish(subject string, msg []byte) error {
-	result := domain.Join(psnet.OpPub, psnet.Space, []byte(subject), psnet.CRLF, msg, psnet.CRLF)
+	result := domain.Join(domain.OpPub, domain.Space, []byte(subject), domain.CRLF, msg, domain.CRLF)
 	c.log.Debug(string(result))
 	_, err := c.conn.Write(result)
 	if err != nil {
@@ -152,7 +150,7 @@ func (c *Conn) Request(subject string, msg []byte) (*Message, error) {
 	}
 
 	c.log.Debug(reply)
-	bResult := domain.Join(psnet.OpPub, psnet.Space, []byte(subject), psnet.Space, []byte(reply), psnet.CRLF, msg, psnet.CRLF)
+	bResult := domain.Join(domain.OpPub, domain.Space, []byte(subject), domain.Space, []byte(reply), domain.CRLF, msg, domain.CRLF)
 	c.log.Debug(string(bResult))
 	_, err = c.conn.Write(bResult)
 	if err != nil {
@@ -169,7 +167,7 @@ func (c *Conn) Request(subject string, msg []byte) (*Message, error) {
 }
 
 func (c *Conn) PublishRequest(subject string, reply string, msg []byte) error {
-	result := domain.Join(psnet.OpPub, psnet.Space, []byte(subject), psnet.Space, []byte(reply), psnet.CRLF, msg, psnet.CRLF)
+	result := domain.Join(domain.OpPub, domain.Space, []byte(subject), domain.Space, []byte(reply), domain.CRLF, msg, domain.CRLF)
 	c.log.Debug(string(result))
 	_, err := c.conn.Write(result)
 	if err != nil {

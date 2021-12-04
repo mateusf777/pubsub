@@ -5,9 +5,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/mateusf777/pubsub/log"
+	"github.com/mateusf777/pubsub/domain"
 
-	psnet "github.com/mateusf777/pubsub/net"
+	"github.com/mateusf777/pubsub/log"
 
 	"github.com/mateusf777/pubsub/server"
 )
@@ -20,7 +20,7 @@ func main() {
 	rand.Seed(time.Now().Unix())
 
 	address := os.Getenv("PUBSUB_ADDRESS")
-	if address == string(psnet.Empty) {
+	if address == string(domain.Empty) {
 		address = defaultAddress
 	}
 

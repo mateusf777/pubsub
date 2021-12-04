@@ -3,8 +3,6 @@ package domain
 import (
 	"fmt"
 	"testing"
-
-	"github.com/mateusf777/pubsub/net"
 )
 
 func TestJoin(t *testing.T) {
@@ -14,7 +12,7 @@ func TestJoin(t *testing.T) {
 	c := "test c"
 	expected := fmt.Sprintf("%s %s %s", a, b, c)
 
-	r := Join([]byte(a), net.Space, []byte(b), net.Space, []byte(c))
+	r := Join([]byte(a), Space, []byte(b), Space, []byte(c))
 
 	if string(r) != expected {
 		t.Error("error")

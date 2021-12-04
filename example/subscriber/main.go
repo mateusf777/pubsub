@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"time"
 
-	psnet "github.com/mateusf777/pubsub/net"
+	"github.com/mateusf777/pubsub/domain"
 
 	"github.com/mateusf777/pubsub/client"
 	logger "github.com/mateusf777/pubsub/log"
@@ -60,6 +60,6 @@ func main() {
 		return
 	}
 
-	psnet.Wait()
+	domain.Wait()
 	log.Debug("Closing")
 }
