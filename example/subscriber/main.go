@@ -4,6 +4,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/mateusf777/pubsub/example/common"
+
 	"github.com/mateusf777/pubsub/domain"
 
 	"github.com/mateusf777/pubsub/client"
@@ -24,7 +26,7 @@ func main() {
 	count := 0
 	err = conn.Subscribe("test", func(msg *client.Message) {
 		count++
-		if count >= 8000000 {
+		if count >= (common.Routines * common.Messages) {
 			log.Info("received %d", count)
 		}
 	})

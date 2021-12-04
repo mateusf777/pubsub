@@ -4,18 +4,15 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/mateusf777/pubsub/example/common"
+
 	"github.com/mateusf777/pubsub/client"
 	logger "github.com/mateusf777/pubsub/log"
 )
 
-const (
-	routines = 8
-	messages = 1000000
-)
-
 func main() {
 	wg := &sync.WaitGroup{}
-	for i := 0; i < routines; i++ {
+	for i := 0; i < common.Routines; i++ {
 		wg.Add(1)
 		go send(wg)
 	}
@@ -39,7 +36,7 @@ func send(wg *sync.WaitGroup) {
 	}()
 
 	log.Info("start sending")
-	for i := 0; i < messages; i++ {
+	for i := 0; i < common.Messages; i++ {
 		msg := fmt.Sprintf("this is a longer test with count: %d", i)
 		err := conn.Publish("test", []byte(msg))
 		if err != nil {
