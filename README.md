@@ -24,7 +24,7 @@ go build ./example/queue      // build the queue example
 
 If you want to run the examples, first start subscriber in a different terminal, then the order does not matter.
 Attention!! The publisher example triggers 1000000 messages 8x concurrently as fast as it can, it will get "a bit" of cpu.
-You can adjust it in the `./example/common.go` and build it again: 
+You can adjust it in the `./example/common/common.go` and build it again: 
 ```
 const (
 	Routines = 8
