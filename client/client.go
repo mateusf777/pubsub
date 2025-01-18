@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -100,7 +101,7 @@ func (c *Conn) Drain() {
 
 // Publish sends a message for a subject
 func (c *Conn) Publish(subject string, msg []byte) error {
-	result := domain.Join(domain.OpPub, domain.Space, []byte(subject), domain.CRLF, msg, domain.CRLF)
+	result := bytes.Join([][]byte{domain.OpPub, domain.Space, []byte(subject), domain.CRLF, msg, domain.CRLF}, nil)
 	slog.Debug(string(result))
 	_, err := c.conn.Write(result)
 	if err != nil {
@@ -154,7 +155,7 @@ func (c *Conn) Request(subject string, msg []byte) (*Message, error) {
 	}
 
 	slog.Debug(reply)
-	bResult := domain.Join(domain.OpPub, domain.Space, []byte(subject), domain.Space, []byte(reply), domain.CRLF, msg, domain.CRLF)
+	bResult := bytes.Join([][]byte{domain.OpPub, domain.Space, []byte(subject), domain.Space, []byte(reply), domain.CRLF, msg, domain.CRLF}, nil)
 	slog.Debug(string(bResult))
 	_, err = c.conn.Write(bResult)
 	if err != nil {
@@ -171,7 +172,7 @@ func (c *Conn) Request(subject string, msg []byte) (*Message, error) {
 }
 
 func (c *Conn) PublishRequest(subject string, reply string, msg []byte) error {
-	result := domain.Join(domain.OpPub, domain.Space, []byte(subject), domain.Space, []byte(reply), domain.CRLF, msg, domain.CRLF)
+	result := bytes.Join([][]byte{domain.OpPub, domain.Space, []byte(subject), domain.Space, []byte(reply), domain.CRLF, msg, domain.CRLF}, nil)
 	slog.Debug(string(result))
 	_, err := c.conn.Write(result)
 	if err != nil {

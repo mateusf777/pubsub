@@ -43,7 +43,7 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 				var result []byte
 				switch {
 				case domain.Equals(bytes.ToUpper(temp), domain.OpPing):
-					result = domain.Join(domain.OpPong, domain.CRLF)
+					result = bytes.Join([][]byte{domain.OpPong, domain.CRLF}, nil)
 					break
 
 				case domain.Equals(bytes.ToUpper(temp), domain.OpPong):

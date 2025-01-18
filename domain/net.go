@@ -30,10 +30,10 @@ var (
 	CRLF     = []byte{'\r', '\n'}
 	Space    = []byte{' '}
 	Empty    []byte
-	OK       = Join(OpOK, CRLF)
+	OK       = bytes.Join([][]byte{OpOK, CRLF}, nil)
 	ControlC = []byte{255, 244, 255, 253, 6}
-	Stop     = Join(OpStop, CRLF)
-	Ping     = Join(OpPing, CRLF)
+	Stop     = bytes.Join([][]byte{OpStop, CRLF}, nil)
+	Ping     = bytes.Join([][]byte{OpPing, CRLF}, nil)
 )
 
 const CloseErr = "use of closed network connection"
@@ -46,7 +46,7 @@ func Read(c net.Conn, buffer []byte, dataCh chan []byte) {
 			return
 		}
 
-		toBeSplit := Join(accumulator, buffer[:n])
+		toBeSplit := bytes.Join([][]byte{accumulator, buffer[:n]}, nil)
 		messages := bytes.Split(toBeSplit, CRLF)
 		accumulator = Empty
 
@@ -86,7 +86,7 @@ Timeout:
 				break Timeout
 			}
 
-			_, err := c.Write(Join(OpPing, CRLF))
+			_, err := c.Write(bytes.Join([][]byte{OpPing, CRLF}, nil))
 			if err != nil {
 				if strings.Contains(err.Error(), "broken pipe") {
 					closeHandler <- true

@@ -51,7 +51,7 @@ func (s Server) handleConnection(c net.Conn, ps *domain.PubSub) {
 					break Loop
 
 				case domain.Equals(bytes.ToUpper(temp), domain.OpPing):
-					result = domain.Join(domain.OpPong, domain.CRLF)
+					result = bytes.Join([][]byte{domain.OpPong, domain.CRLF}, nil)
 					break
 
 				case domain.Equals(bytes.ToUpper(temp), domain.OpPong):
@@ -72,7 +72,7 @@ func (s Server) handleConnection(c net.Conn, ps *domain.PubSub) {
 					if domain.Equals(temp, domain.Empty) {
 						continue
 					}
-					result = domain.Join([]byte("-ERR invalid protocol"), domain.CRLF)
+					result = bytes.Join([][]byte{[]byte("-ERR invalid protocol"), domain.CRLF}, nil)
 				}
 				_, err := c.Write(result)
 				if err != nil {
@@ -113,7 +113,7 @@ func (s Server) handlePub(c net.Conn, ps *domain.PubSub, client string, received
 	if len(args) == 3 {
 		reply := args[2]
 		err := ps.Subscribe(string(reply), client, func(msg domain.Message) {
-			result = domain.Join(domain.OpMsg, domain.Space, []byte(msg.Subject), domain.Space, []byte(msg.Reply), domain.CRLF, msg.Data, domain.CRLF)
+			result = bytes.Join([][]byte{domain.OpMsg, domain.Space, []byte(msg.Subject), domain.Space, []byte(msg.Reply), domain.CRLF, msg.Data, domain.CRLF}, nil)
 			slog.Debug("pub", "value", result)
 			_, err := c.Write(result)
 			if err != nil {
@@ -122,7 +122,7 @@ func (s Server) handlePub(c net.Conn, ps *domain.PubSub, client string, received
 
 		}, domain.WithMaxMsg(1))
 		if err != nil {
-			return domain.Join(domain.OpERR, domain.Space, []byte(err.Error()))
+			return bytes.Join([][]byte{domain.OpERR, domain.Space, []byte(err.Error())}, nil)
 		}
 		opts = append(opts, domain.WithReply(string(reply)))
 	}
@@ -130,7 +130,7 @@ func (s Server) handlePub(c net.Conn, ps *domain.PubSub, client string, received
 	// dispatch
 	err := ps.Publish(string(args[1]), msg, opts...)
 	if err != nil {
-		return domain.Join(domain.OpERR, domain.Space, []byte(err.Error()))
+		return bytes.Join([][]byte{domain.OpERR, domain.Space, []byte(err.Error())}, nil)
 	}
 
 	return result
@@ -150,7 +150,7 @@ func handleUnsub(ps *domain.PubSub, client string, received []byte) []byte {
 	// dispatch
 	err := ps.Unsubscribe(string(args[1]), client, id)
 	if err != nil {
-		return domain.Join(domain.OpERR, domain.Space, []byte(err.Error()))
+		return bytes.Join([][]byte{domain.OpERR, domain.Space, []byte(err.Error())}, nil)
 	}
 	return result
 }
@@ -186,14 +186,14 @@ func (s Server) handleSub(c net.Conn, ps *domain.PubSub, client string, received
 		}
 	}, opts...)
 	if err != nil {
-		return domain.Join(domain.OpERR, domain.Space, []byte(err.Error()))
+		return bytes.Join([][]byte{domain.OpERR, domain.Space, []byte(err.Error())}, nil)
 	}
 
 	return result
 }
 
 func (s Server) sendMsg(conn net.Conn, id int, msg domain.Message) error {
-	result := domain.Join(domain.OpMsg, domain.Space, []byte(msg.Subject), domain.Space, []byte(strconv.Itoa(id)), domain.Space, []byte(msg.Reply), domain.CRLF, msg.Data, domain.CRLF)
+	result := bytes.Join([][]byte{domain.OpMsg, domain.Space, []byte(msg.Subject), domain.Space, []byte(strconv.Itoa(id)), domain.Space, []byte(msg.Reply), domain.CRLF, msg.Data, domain.CRLF}, nil)
 	slog.Debug("join", "result", result)
 	_, err := conn.Write(result)
 	if err != nil {
