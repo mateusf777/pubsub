@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mateusf777/pubsub/domain"
+	"github.com/mateusf777/pubsub/core"
 )
 
 // Conn contains the state of the connection with the pubsub server to perform the necessary operations
@@ -63,14 +63,14 @@ func Connect(address string, opts ...Opt) (*Conn, error) {
 
 // Close sends the "stop" operation so the server can clean up the resources
 func (c *Conn) Close() {
-	_, err := c.conn.Write(domain.Stop)
+	_, err := c.conn.Write(core.Stop)
 	if err != nil {
 		if !strings.Contains(err.Error(), "broken pipe") {
 			logger.Error("Conn.Close", "error", err)
 		}
 	} else {
 		for {
-			_, err := c.conn.Write(domain.Ping)
+			_, err := c.conn.Write(core.Ping)
 			if err != nil {
 				continue
 			}
@@ -85,9 +85,9 @@ func (c *Conn) Close() {
 
 // Drain message and connections
 func (c *Conn) Drain() {
-	_, _ = c.conn.Write(domain.Stop)
+	_, _ = c.conn.Write(core.Stop)
 	for {
-		_, err := c.conn.Write(domain.Ping)
+		_, err := c.conn.Write(core.Ping)
 		if err == nil {
 			continue
 		}
@@ -101,7 +101,7 @@ func (c *Conn) Drain() {
 
 // Publish sends a message for a subject
 func (c *Conn) Publish(subject string, msg []byte) error {
-	result := bytes.Join([][]byte{domain.OpPub, domain.Space, []byte(subject), domain.CRLF, msg, domain.CRLF}, nil)
+	result := bytes.Join([][]byte{core.OpPub, core.Space, []byte(subject), core.CRLF, msg, core.CRLF}, nil)
 	slog.Debug(string(result))
 	_, err := c.conn.Write(result)
 	if err != nil {
@@ -155,7 +155,7 @@ func (c *Conn) Request(subject string, msg []byte) (*Message, error) {
 	}
 
 	slog.Debug(reply)
-	bResult := bytes.Join([][]byte{domain.OpPub, domain.Space, []byte(subject), domain.Space, []byte(reply), domain.CRLF, msg, domain.CRLF}, nil)
+	bResult := bytes.Join([][]byte{core.OpPub, core.Space, []byte(subject), core.Space, []byte(reply), core.CRLF, msg, core.CRLF}, nil)
 	slog.Debug(string(bResult))
 	_, err = c.conn.Write(bResult)
 	if err != nil {
@@ -172,7 +172,7 @@ func (c *Conn) Request(subject string, msg []byte) (*Message, error) {
 }
 
 func (c *Conn) PublishRequest(subject string, reply string, msg []byte) error {
-	result := bytes.Join([][]byte{domain.OpPub, domain.Space, []byte(subject), domain.Space, []byte(reply), domain.CRLF, msg, domain.CRLF}, nil)
+	result := bytes.Join([][]byte{core.OpPub, core.Space, []byte(subject), core.Space, []byte(reply), core.CRLF, msg, core.CRLF}, nil)
 	slog.Debug(string(result))
 	_, err := c.conn.Write(result)
 	if err != nil {

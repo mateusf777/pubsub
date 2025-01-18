@@ -3,11 +3,12 @@ package main
 import (
 	"log/slog"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/mateusf777/pubsub/client"
-	"github.com/mateusf777/pubsub/domain"
 	"github.com/mateusf777/pubsub/example/common"
 )
 
@@ -62,6 +63,8 @@ func main() {
 		return
 	}
 
-	domain.Wait()
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	<-sigs
 	slog.Debug("Closing")
 }

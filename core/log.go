@@ -1,4 +1,4 @@
-package domain
+package core
 
 import (
 	"log/slog"

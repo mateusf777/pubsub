@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mateusf777/pubsub/domain"
+	"github.com/mateusf777/pubsub/core"
 )
 
-func (s Server) handleConnection(c net.Conn, ps *domain.PubSub) {
+func (s Server) handleConnection(c net.Conn, ps *core.PubSub) {
 	defer func(c net.Conn) {
 		err := c.Close()
 		if err != nil {
@@ -31,7 +31,7 @@ func (s Server) handleConnection(c net.Conn, ps *domain.PubSub) {
 	dataCh := make(chan []byte, 100)
 
 	go func() {
-		go domain.Read(c, buffer, dataCh)
+		go core.Read(c, buffer, dataCh)
 
 		// dispatch
 		for netData := range dataCh {
@@ -41,35 +41,35 @@ func (s Server) handleConnection(c net.Conn, ps *domain.PubSub) {
 
 			var result []byte
 			switch {
-			case domain.Equals(bytes.ToUpper(data), domain.OpStop), domain.Equals(data, domain.ControlC):
+			case core.Equals(bytes.ToUpper(data), core.OpStop), core.Equals(data, core.ControlC):
 				slog.Info("Closing connection", "remote", c.RemoteAddr().String())
 				stopInactivityMonitor <- true
 				closeHandler <- true
 				break
 
-			case domain.Equals(bytes.ToUpper(data), domain.OpPing):
-				result = bytes.Join([][]byte{domain.OpPong, domain.CRLF}, nil)
+			case core.Equals(bytes.ToUpper(data), core.OpPing):
+				result = bytes.Join([][]byte{core.OpPong, core.CRLF}, nil)
 				break
 
-			case domain.Equals(bytes.ToUpper(data), domain.OpPong):
-				result = domain.OK
+			case core.Equals(bytes.ToUpper(data), core.OpPong):
+				result = core.OK
 				break
 
-			case bytes.HasPrefix(bytes.ToUpper(data), domain.OpPub):
+			case bytes.HasPrefix(bytes.ToUpper(data), core.OpPub):
 				result = s.handlePub(c, ps, client, data, dataCh)
 
-			case bytes.HasPrefix(bytes.ToUpper(data), domain.OpSub):
+			case bytes.HasPrefix(bytes.ToUpper(data), core.OpSub):
 				slog.Debug("sub", "value", data)
 				result = s.handleSub(c, ps, client, data)
 
-			case bytes.HasPrefix(bytes.ToUpper(data), domain.OpUnsub):
+			case bytes.HasPrefix(bytes.ToUpper(data), core.OpUnsub):
 				result = handleUnsub(ps, client, data)
 
 			default:
-				if domain.Equals(data, domain.Empty) {
+				if core.Equals(data, core.Empty) {
 					continue
 				}
-				result = bytes.Join([][]byte{[]byte("-ERR invalid protocol"), domain.CRLF}, nil)
+				result = bytes.Join([][]byte{[]byte("-ERR invalid protocol"), core.CRLF}, nil)
 			}
 
 			_, err := c.Write(result)
@@ -83,62 +83,62 @@ func (s Server) handleConnection(c net.Conn, ps *domain.PubSub) {
 		}
 	}()
 
-	go domain.MonitorInactivity(c, inactivityReset, stopInactivityMonitor, closeHandler)
+	go core.MonitorInactivity(c, inactivityReset, stopInactivityMonitor, closeHandler)
 
 	<-closeHandler
 	ps.UnsubAll(client)
 	return
 }
 
-func (s Server) handlePub(c net.Conn, ps *domain.PubSub, client string, received []byte, dataCh chan []byte) []byte {
+func (s Server) handlePub(c net.Conn, ps *core.PubSub, client string, received []byte, dataCh chan []byte) []byte {
 	// default result
-	result := domain.OK
+	result := core.OK
 
 	// Get next line
 	msg := <-dataCh
 
 	// parse
-	args := bytes.Split(received, domain.Space)
+	args := bytes.Split(received, core.Space)
 
 	if len(args) < 2 || len(args) > 3 {
 		return []byte("-ERR should be PUB <subject> [reply-to]\n")
 	}
 
-	opts := make([]domain.PubOpt, 0)
+	opts := make([]core.PubOpt, 0)
 
 	// subscribe for reply
 	if len(args) == 3 {
 		reply := args[2]
-		err := ps.Subscribe(string(reply), client, func(msg domain.Message) {
-			result = bytes.Join([][]byte{domain.OpMsg, domain.Space, []byte(msg.Subject), domain.Space, []byte(msg.Reply), domain.CRLF, msg.Data, domain.CRLF}, nil)
+		err := ps.Subscribe(string(reply), client, func(msg core.Message) {
+			result = bytes.Join([][]byte{core.OpMsg, core.Space, []byte(msg.Subject), core.Space, []byte(msg.Reply), core.CRLF, msg.Data, core.CRLF}, nil)
 			slog.Debug("pub", "value", result)
 			_, err := c.Write(result)
 			if err != nil {
 				slog.Error("server handler handlePub", "error", err)
 			}
 
-		}, domain.WithMaxMsg(1))
+		}, core.WithMaxMsg(1))
 		if err != nil {
-			return bytes.Join([][]byte{domain.OpERR, domain.Space, []byte(err.Error())}, nil)
+			return bytes.Join([][]byte{core.OpERR, core.Space, []byte(err.Error())}, nil)
 		}
-		opts = append(opts, domain.WithReply(string(reply)))
+		opts = append(opts, core.WithReply(string(reply)))
 	}
 
 	// dispatch
 	err := ps.Publish(string(args[1]), msg, opts...)
 	if err != nil {
-		return bytes.Join([][]byte{domain.OpERR, domain.Space, []byte(err.Error())}, nil)
+		return bytes.Join([][]byte{core.OpERR, core.Space, []byte(err.Error())}, nil)
 	}
 
 	return result
 }
 
-func handleUnsub(ps *domain.PubSub, client string, received []byte) []byte {
+func handleUnsub(ps *core.PubSub, client string, received []byte) []byte {
 	// default result
-	result := domain.OK
+	result := core.OK
 
 	// parse
-	args := bytes.Split(received, domain.Space)
+	args := bytes.Split(received, core.Space)
 	if len(args) != 3 {
 		return []byte("-ERR should be UNSUB <subject> <id>\n")
 	}
@@ -147,50 +147,50 @@ func handleUnsub(ps *domain.PubSub, client string, received []byte) []byte {
 	// dispatch
 	err := ps.Unsubscribe(string(args[1]), client, id)
 	if err != nil {
-		return bytes.Join([][]byte{domain.OpERR, domain.Space, []byte(err.Error())}, nil)
+		return bytes.Join([][]byte{core.OpERR, core.Space, []byte(err.Error())}, nil)
 	}
 	return result
 }
 
-func (s Server) handleSub(c net.Conn, ps *domain.PubSub, client string, received []byte) []byte {
+func (s Server) handleSub(c net.Conn, ps *core.PubSub, client string, received []byte) []byte {
 	// default result
-	result := domain.OK
+	result := core.OK
 
 	// parse
-	args := bytes.Split(received, domain.Space)
+	args := bytes.Split(received, core.Space)
 	if len(args) < 3 || len(args) > 5 {
 		return []byte("-ERR should be SUB <subject> <id> [max-msg] [group]\n")
 	}
 
 	id, _ := strconv.Atoi(string(args[2]))
-	opts := make([]domain.SubOpt, 0)
+	opts := make([]core.SubOpt, 0)
 
 	if len(args) == 4 {
 		maxMsg, _ := strconv.Atoi(string(args[3]))
-		opts = append(opts, domain.WithMaxMsg(maxMsg))
+		opts = append(opts, core.WithMaxMsg(maxMsg))
 	}
 	if len(args) == 5 {
 		group := args[4]
-		opts = append(opts, domain.WithGroup(string(group)))
+		opts = append(opts, core.WithGroup(string(group)))
 	}
-	opts = append(opts, domain.WithID(id))
+	opts = append(opts, core.WithID(id))
 
 	// dispatch
-	err := ps.Subscribe(string(args[1]), client, func(msg domain.Message) {
+	err := ps.Subscribe(string(args[1]), client, func(msg core.Message) {
 		err := s.sendMsg(c, id, msg)
 		if err != nil {
 			slog.Error("send", "error", err)
 		}
 	}, opts...)
 	if err != nil {
-		return bytes.Join([][]byte{domain.OpERR, domain.Space, []byte(err.Error())}, nil)
+		return bytes.Join([][]byte{core.OpERR, core.Space, []byte(err.Error())}, nil)
 	}
 
 	return result
 }
 
-func (s Server) sendMsg(conn net.Conn, id int, msg domain.Message) error {
-	result := bytes.Join([][]byte{domain.OpMsg, domain.Space, []byte(msg.Subject), domain.Space, []byte(strconv.Itoa(id)), domain.Space, []byte(msg.Reply), domain.CRLF, msg.Data, domain.CRLF}, nil)
+func (s Server) sendMsg(conn net.Conn, id int, msg core.Message) error {
+	result := bytes.Join([][]byte{core.OpMsg, core.Space, []byte(msg.Subject), core.Space, []byte(strconv.Itoa(id)), core.Space, []byte(msg.Reply), core.CRLF, msg.Data, core.CRLF}, nil)
 	slog.Debug("join", "result", result)
 	_, err := conn.Write(result)
 	if err != nil {

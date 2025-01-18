@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mateusf777/pubsub/domain"
+	"github.com/mateusf777/pubsub/core"
 )
 
 func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
@@ -25,7 +25,7 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 
 	go func(ctx context.Context) {
 
-		go domain.Read(c.conn, buffer, dataCh)
+		go core.Read(c.conn, buffer, dataCh)
 
 		for {
 			select {
@@ -42,33 +42,33 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 
 				var result []byte
 				switch {
-				case domain.Equals(bytes.ToUpper(data), domain.OpPing):
-					result = bytes.Join([][]byte{domain.OpPong, domain.CRLF}, nil)
+				case core.Equals(bytes.ToUpper(data), core.OpPing):
+					result = bytes.Join([][]byte{core.OpPong, core.CRLF}, nil)
 					break
 
-				case domain.Equals(bytes.ToUpper(data), domain.OpPong):
+				case core.Equals(bytes.ToUpper(data), core.OpPong):
 					break
 
-				case domain.Equals(bytes.ToUpper(data), domain.OpOK):
+				case core.Equals(bytes.ToUpper(data), core.OpOK):
 					break
 
-				case domain.Equals(bytes.ToUpper(data), domain.OpERR):
+				case core.Equals(bytes.ToUpper(data), core.OpERR):
 					logger.Error("OpERR", "value", data)
 					break
 
-				case bytes.HasPrefix(bytes.ToUpper(data), domain.OpMsg):
+				case bytes.HasPrefix(bytes.ToUpper(data), core.OpMsg):
 					logger.Debug("in opMsg...")
 					logger.Debug("calling handleMsg")
 					handleMsg(c, ps, data, dataCh)
 
 				default:
-					if domain.Equals(data, domain.Empty) {
+					if core.Equals(data, core.Empty) {
 						continue
 					}
-					result = domain.Empty
+					result = core.Empty
 				}
 
-				if !domain.Equals(result, domain.Empty) {
+				if !core.Equals(result, core.Empty) {
 					_, err := c.conn.Write(result)
 					if err != nil {
 						if strings.Contains(err.Error(), "broken pipe") {
@@ -82,7 +82,7 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 		}
 	}(ctx)
 
-	go domain.MonitorInactivity(c.conn, inactiveReset, stopInactiveMonitor, closeHandler)
+	go core.MonitorInactivity(c.conn, inactiveReset, stopInactiveMonitor, closeHandler)
 
 	<-closeHandler
 
@@ -91,8 +91,8 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 
 func handleMsg(c *Conn, ps *pubSub, received []byte, dataCh chan []byte) {
 	logger.Debug("handleMsg", "received", received)
-	parts := bytes.Split(received, domain.CRLF)
-	args := bytes.Split(parts[0], domain.Space)
+	parts := bytes.Split(received, core.CRLF)
+	args := bytes.Split(parts[0], core.Space)
 	msg := <-dataCh
 	if len(args) < 3 || len(args) > 4 {
 		return //"-ERR should be MSG <subject> <id> [reply-to]\n"

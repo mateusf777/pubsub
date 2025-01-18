@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/mateusf777/pubsub/domain"
+	"github.com/mateusf777/pubsub/core"
 	"github.com/mateusf777/pubsub/server"
 )
 
@@ -18,7 +18,7 @@ func main() {
 	slog.SetLogLoggerLevel(slog.LevelInfo)
 
 	address := os.Getenv("PUBSUB_ADDRESS")
-	if address == string(domain.Empty) {
+	if address == string(core.Empty) {
 		address = defaultAddress
 	}
 
