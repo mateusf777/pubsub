@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const TTL = 5 * time.Second
+const IdleTimeout = 5 * time.Second
 
 var (
 	OpStop  = []byte{'S', 'T', 'O', 'P'}
@@ -66,30 +66,30 @@ func Read(c net.Conn, buffer []byte, dataCh chan []byte) {
 	}
 }
 
-func MonitorTimeout(c net.Conn, timeoutReset chan bool, stopTimeout chan bool, closeHandler chan bool) {
-	timeout := time.NewTicker(TTL)
-	timeoutCount := 0
-Timeout:
+func MonitorInactivity(c net.Conn, reset chan bool, stop chan bool, close chan bool) {
+	checkTicket := time.NewTicker(IdleTimeout)
+	count := 0
+active:
 	for {
 		select {
-		case <-timeoutReset:
-			timeout.Reset(TTL)
-			timeoutCount = 0
+		case <-reset:
+			checkTicket.Reset(IdleTimeout)
+			count = 0
 
-		case <-stopTimeout:
-			break Timeout
+		case <-stop:
+			break active
 
-		case <-timeout.C:
-			timeoutCount++
-			if timeoutCount > 2 {
-				closeHandler <- true
-				break Timeout
+		case <-checkTicket.C:
+			count++
+			if count > 2 {
+				close <- true
+				break active
 			}
 
 			_, err := c.Write(bytes.Join([][]byte{OpPing, CRLF}, nil))
 			if err != nil {
 				if strings.Contains(err.Error(), "broken pipe") {
-					closeHandler <- true
+					close <- true
 					return
 				}
 			}

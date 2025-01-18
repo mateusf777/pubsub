@@ -21,72 +21,69 @@ func (s Server) handleConnection(c net.Conn, ps *domain.PubSub) {
 	}(c)
 
 	closeHandler := make(chan bool)
-	stopTimeout := make(chan bool)
+	inactivityReset := make(chan bool)
+	stopInactivityMonitor := make(chan bool)
 
 	slog.Info("Serving", "remote", c.RemoteAddr().String())
 	client := c.RemoteAddr().String()
-
-	timeoutReset := make(chan bool)
 
 	buffer := make([]byte, 1024)
 	dataCh := make(chan []byte, 100)
 
 	go func() {
 		go domain.Read(c, buffer, dataCh)
-	Loop:
-		for {
 
-			// dispatch
-			for netData := range dataCh {
-				timeoutReset <- true
+		// dispatch
+		for netData := range dataCh {
+			inactivityReset <- true
 
-				temp := bytes.TrimSpace(netData)
+			data := bytes.TrimSpace(netData)
 
-				var result []byte
-				switch {
-				case domain.Equals(bytes.ToUpper(temp), domain.OpStop), domain.Equals(temp, domain.ControlC):
-					slog.Info("Closing connection", "remote", c.RemoteAddr().String())
-					stopTimeout <- true
-					closeHandler <- true
-					break Loop
+			var result []byte
+			switch {
+			case domain.Equals(bytes.ToUpper(data), domain.OpStop), domain.Equals(data, domain.ControlC):
+				slog.Info("Closing connection", "remote", c.RemoteAddr().String())
+				stopInactivityMonitor <- true
+				closeHandler <- true
+				break
 
-				case domain.Equals(bytes.ToUpper(temp), domain.OpPing):
-					result = bytes.Join([][]byte{domain.OpPong, domain.CRLF}, nil)
-					break
+			case domain.Equals(bytes.ToUpper(data), domain.OpPing):
+				result = bytes.Join([][]byte{domain.OpPong, domain.CRLF}, nil)
+				break
 
-				case domain.Equals(bytes.ToUpper(temp), domain.OpPong):
-					result = domain.OK
-					break
+			case domain.Equals(bytes.ToUpper(data), domain.OpPong):
+				result = domain.OK
+				break
 
-				case bytes.HasPrefix(bytes.ToUpper(temp), domain.OpPub):
-					result = s.handlePub(c, ps, client, temp, dataCh)
+			case bytes.HasPrefix(bytes.ToUpper(data), domain.OpPub):
+				result = s.handlePub(c, ps, client, data, dataCh)
 
-				case bytes.HasPrefix(bytes.ToUpper(temp), domain.OpSub):
-					slog.Debug("sub", "value", temp)
-					result = s.handleSub(c, ps, client, temp)
+			case bytes.HasPrefix(bytes.ToUpper(data), domain.OpSub):
+				slog.Debug("sub", "value", data)
+				result = s.handleSub(c, ps, client, data)
 
-				case bytes.HasPrefix(bytes.ToUpper(temp), domain.OpUnsub):
-					result = handleUnsub(ps, client, temp)
+			case bytes.HasPrefix(bytes.ToUpper(data), domain.OpUnsub):
+				result = handleUnsub(ps, client, data)
 
-				default:
-					if domain.Equals(temp, domain.Empty) {
-						continue
-					}
-					result = bytes.Join([][]byte{[]byte("-ERR invalid protocol"), domain.CRLF}, nil)
+			default:
+				if domain.Equals(data, domain.Empty) {
+					continue
 				}
-				_, err := c.Write(result)
-				if err != nil {
-					if strings.Contains(err.Error(), "broken pipe") || strings.Contains(err.Error(), "connection reset by peer") {
-						continue
-					}
-					slog.Error("server handler handleConnection", "error", err)
-				}
-
+				result = bytes.Join([][]byte{[]byte("-ERR invalid protocol"), domain.CRLF}, nil)
 			}
+
+			_, err := c.Write(result)
+			if err != nil {
+				if strings.Contains(err.Error(), "broken pipe") || strings.Contains(err.Error(), "connection reset by peer") {
+					continue
+				}
+				slog.Error("server handler handleConnection", "error", err)
+			}
+
 		}
 	}()
 
-	go domain.MonitorTimeout(c, timeoutReset, stopTimeout, closeHandler)
+	go domain.MonitorInactivity(c, inactivityReset, stopInactivityMonitor, closeHandler)
 
 	<-closeHandler
 	ps.UnsubAll(client)

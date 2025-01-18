@@ -83,7 +83,7 @@ func (c *Conn) Close() {
 	<-c.drained
 }
 
-// Drain ...
+// Drain message and connections
 func (c *Conn) Drain() {
 	_, _ = c.conn.Write(domain.Stop)
 	for {

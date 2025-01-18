@@ -16,9 +16,9 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 	}(c)
 
 	closeHandler := make(chan bool)
-	stopTimeout := make(chan bool)
+	stopInactiveMonitor := make(chan bool)
 
-	timeoutReset := make(chan bool)
+	inactiveReset := make(chan bool)
 
 	buffer := make([]byte, 1024)
 	dataCh := make(chan []byte, 10)
@@ -30,39 +30,39 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 		for {
 			select {
 			case <-ctx.Done():
-				stopTimeout <- true
+				stopInactiveMonitor <- true
 				closeHandler <- true
 				logger.Info("done!")
 				return
 			case netData := <-dataCh:
 				logger.Debug("Received", "netData", netData)
-				timeoutReset <- true
+				inactiveReset <- true
 
-				temp := bytes.TrimSpace(netData)
+				data := bytes.TrimSpace(netData)
 
 				var result []byte
 				switch {
-				case domain.Equals(bytes.ToUpper(temp), domain.OpPing):
+				case domain.Equals(bytes.ToUpper(data), domain.OpPing):
 					result = bytes.Join([][]byte{domain.OpPong, domain.CRLF}, nil)
 					break
 
-				case domain.Equals(bytes.ToUpper(temp), domain.OpPong):
+				case domain.Equals(bytes.ToUpper(data), domain.OpPong):
 					break
 
-				case domain.Equals(bytes.ToUpper(temp), domain.OpOK):
+				case domain.Equals(bytes.ToUpper(data), domain.OpOK):
 					break
 
-				case domain.Equals(bytes.ToUpper(temp), domain.OpERR):
-					logger.Error("OpERR", "value", temp)
+				case domain.Equals(bytes.ToUpper(data), domain.OpERR):
+					logger.Error("OpERR", "value", data)
 					break
 
-				case bytes.HasPrefix(bytes.ToUpper(temp), domain.OpMsg):
+				case bytes.HasPrefix(bytes.ToUpper(data), domain.OpMsg):
 					logger.Debug("in opMsg...")
 					logger.Debug("calling handleMsg")
-					handleMsg(c, ps, temp, dataCh)
+					handleMsg(c, ps, data, dataCh)
 
 				default:
-					if domain.Equals(temp, domain.Empty) {
+					if domain.Equals(data, domain.Empty) {
 						continue
 					}
 					result = domain.Empty
@@ -82,7 +82,7 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 		}
 	}(ctx)
 
-	go domain.MonitorTimeout(c.conn, timeoutReset, stopTimeout, closeHandler)
+	go domain.MonitorInactivity(c.conn, inactiveReset, stopInactiveMonitor, closeHandler)
 
 	<-closeHandler
 
