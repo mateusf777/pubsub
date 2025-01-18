@@ -3,7 +3,6 @@ package client
 import (
 	"bytes"
 	"context"
-	"log/slog"
 	"strconv"
 	"strings"
 
@@ -12,7 +11,7 @@ import (
 
 func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 	defer func(c *Conn) {
-		slog.Info("defer handleConnection", "remote", c.conn.RemoteAddr().String())
+		logger.Info("Closing connection", "remote", c.conn.RemoteAddr().String())
 		c.drained <- struct{}{}
 	}(c)
 
@@ -27,24 +26,19 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 	go func(ctx context.Context) {
 
 		go domain.Read(c.conn, buffer, dataCh)
-		accumulator := domain.Empty
 
 		for {
 			select {
 			case <-ctx.Done():
 				stopTimeout <- true
 				closeHandler <- true
-				slog.Info("done!")
+				logger.Info("done!")
 				return
 			case netData := <-dataCh:
-				slog.Debug("Received", "netData", netData)
+				logger.Debug("Received", "netData", netData)
 				timeoutReset <- true
 
 				temp := bytes.TrimSpace(netData)
-
-				if !domain.Equals(accumulator, domain.Empty) {
-					temp = domain.Join(accumulator, domain.CRLF, temp)
-				}
 
 				var result []byte
 				switch {
@@ -59,17 +53,13 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 					break
 
 				case domain.Equals(bytes.ToUpper(temp), domain.OpERR):
-					slog.Error("OpERR", "value", temp)
+					logger.Error("OpERR", "value", temp)
 					break
 
 				case bytes.HasPrefix(bytes.ToUpper(temp), domain.OpMsg):
-					slog.Debug("in opMsg...")
-					if domain.Equals(bytes.ToUpper(accumulator), domain.Empty) {
-						accumulator = temp
-						continue
-					}
-					slog.Debug("calling handleMsg")
-					handleMsg(c, ps, temp)
+					logger.Debug("in opMsg...")
+					logger.Debug("calling handleMsg")
+					handleMsg(c, ps, temp, dataCh)
 
 				default:
 					if domain.Equals(temp, domain.Empty) {
@@ -84,11 +74,10 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 						if strings.Contains(err.Error(), "broken pipe") {
 							continue
 						}
-						slog.Error("client handleConnection", "error", err)
+						logger.Error("client handleConnection", "error", err)
 					}
 				}
 
-				accumulator = domain.Empty
 			}
 		}
 	}(ctx)
@@ -100,11 +89,11 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 	return
 }
 
-func handleMsg(c *Conn, ps *pubSub, received []byte) {
-	slog.Debug("handleMsg", "received", received)
+func handleMsg(c *Conn, ps *pubSub, received []byte, dataCh chan []byte) {
+	logger.Debug("handleMsg", "received", received)
 	parts := bytes.Split(received, domain.CRLF)
 	args := bytes.Split(parts[0], domain.Space)
-	msg := parts[1]
+	msg := <-dataCh
 	if len(args) < 3 || len(args) > 4 {
 		return //"-ERR should be MSG <subject> <id> [reply-to]\n"
 	}

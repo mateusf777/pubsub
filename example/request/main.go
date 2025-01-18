@@ -2,11 +2,15 @@ package main
 
 import (
 	"log/slog"
+	"os"
 
 	"github.com/mateusf777/pubsub/client"
 )
 
 func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+	slog.SetLogLoggerLevel(slog.LevelDebug)
 
 	conn, err := client.Connect(":9999")
 	if err != nil {
@@ -22,5 +26,5 @@ func main() {
 		return
 	}
 
-	slog.Info("now", "data", resp.Data)
+	slog.Info("now", "data", string(resp.Data))
 }

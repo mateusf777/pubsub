@@ -60,6 +60,7 @@ func Read(c net.Conn, buffer []byte, dataCh chan []byte) {
 		}
 
 		for _, msg := range messages {
+			logger.Info(string(msg))
 			dataCh <- msg
 		}
 	}

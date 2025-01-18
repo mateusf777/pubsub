@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +23,18 @@ type Conn struct {
 }
 
 type Opt func(c *Conn)
+
+var logger *slog.Logger
+
+func SetLogLevel(level slog.Level) {
+	logHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})
+	logger = slog.New(logHandler)
+}
+
+func init() {
+	logHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError})
+	logger = slog.New(logHandler)
+}
 
 // Connect makes the connection with the server
 func Connect(address string, opts ...Opt) (*Conn, error) {
@@ -52,7 +65,7 @@ func (c *Conn) Close() {
 	_, err := c.conn.Write(domain.Stop)
 	if err != nil {
 		if !strings.Contains(err.Error(), "broken pipe") {
-			slog.Error("Conn.Close", "error", err)
+			logger.Error("Conn.Close", "error", err)
 		}
 	} else {
 		for {
@@ -80,7 +93,7 @@ func (c *Conn) Drain() {
 		break
 	}
 
-	slog.Info("drained")
+	logger.Info("drained")
 	c.cancel()
 	<-c.drained
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"log/slog"
+	"os"
 	"sync"
 	"time"
 
@@ -14,6 +15,10 @@ const (
 )
 
 func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+	slog.SetLogLoggerLevel(slog.LevelInfo)
+
 	conn, err := client.Connect(":9999")
 	if err != nil {
 		slog.Error("client.Connect", "error", err)

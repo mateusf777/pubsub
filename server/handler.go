@@ -15,7 +15,7 @@ func (s Server) handleConnection(c net.Conn, ps *domain.PubSub) {
 	defer func(c net.Conn) {
 		err := c.Close()
 		if err != nil {
-			slog.Error("Servier.handleConnection", "error", err)
+			slog.Error("Server.handleConnection", "error", err)
 		}
 		slog.Info("Closed connection", "remote", c.RemoteAddr().String())
 	}(c)
@@ -37,15 +37,10 @@ func (s Server) handleConnection(c net.Conn, ps *domain.PubSub) {
 		for {
 
 			// dispatch
-			accumulator := domain.Empty
 			for netData := range dataCh {
 				timeoutReset <- true
 
 				temp := bytes.TrimSpace(netData)
-
-				if !domain.Equals(accumulator, domain.Empty) {
-					temp = domain.Join(accumulator, domain.CRLF, temp)
-				}
 
 				var result []byte
 				switch {
@@ -64,12 +59,7 @@ func (s Server) handleConnection(c net.Conn, ps *domain.PubSub) {
 					break
 
 				case bytes.HasPrefix(bytes.ToUpper(temp), domain.OpPub):
-					// uses accumulator to get next line
-					if domain.Equals(bytes.ToUpper(accumulator), domain.Empty) {
-						accumulator = temp
-						continue
-					}
-					result = s.handlePub(c, ps, client, temp)
+					result = s.handlePub(c, ps, client, temp, dataCh)
 
 				case bytes.HasPrefix(bytes.ToUpper(temp), domain.OpSub):
 					slog.Debug("sub", "value", temp)
@@ -92,8 +82,6 @@ func (s Server) handleConnection(c net.Conn, ps *domain.PubSub) {
 					slog.Error("server handler handleConnection", "error", err)
 				}
 
-				// reset accumulator
-				accumulator = domain.Empty
 			}
 		}
 	}()
@@ -105,20 +93,22 @@ func (s Server) handleConnection(c net.Conn, ps *domain.PubSub) {
 	return
 }
 
-func (s Server) handlePub(c net.Conn, ps *domain.PubSub, client string, received []byte) []byte {
+func (s Server) handlePub(c net.Conn, ps *domain.PubSub, client string, received []byte, dataCh chan []byte) []byte {
 	// default result
 	result := domain.OK
 
+	// Get next line
+	msg := <-dataCh
+
 	// parse
-	parts := bytes.Split(received, domain.CRLF)
-	args := bytes.Split(parts[0], domain.Space)
-	msg := parts[1]
+	args := bytes.Split(received, domain.Space)
 
 	if len(args) < 2 || len(args) > 3 {
 		return []byte("-ERR should be PUB <subject> [reply-to]\n")
 	}
 
 	opts := make([]domain.PubOpt, 0)
+
 	// subscribe for reply
 	if len(args) == 3 {
 		reply := args[2]

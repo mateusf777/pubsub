@@ -2,7 +2,6 @@ package domain
 
 import (
 	"fmt"
-	"log/slog"
 	"math/rand"
 	"sync"
 )
@@ -187,11 +186,11 @@ func (ps *PubSub) UnsubAll(client string) {
 // It's started by the NewPubSub
 func (ps *PubSub) run() {
 
-	slog.Info("Message router started")
+	logger.Info("Message router started")
 	ps.running = true
 
 	defer func() {
-		slog.Info("Message router stopped")
+		logger.Info("Message router stopped")
 		ps.running = false
 	}()
 
