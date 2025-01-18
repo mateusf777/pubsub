@@ -1,14 +1,10 @@
 package main
 
 import (
-	"math/rand"
+	"log/slog"
 	"os"
-	"time"
 
 	"github.com/mateusf777/pubsub/domain"
-
-	"github.com/mateusf777/pubsub/log"
-
 	"github.com/mateusf777/pubsub/server"
 )
 
@@ -17,13 +13,15 @@ import (
 const defaultAddress = "127.0.0.1:9999"
 
 func main() {
-	rand.Seed(time.Now().Unix())
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+	slog.SetLogLoggerLevel(slog.LevelInfo)
 
 	address := os.Getenv("PUBSUB_ADDRESS")
 	if address == string(domain.Empty) {
 		address = defaultAddress
 	}
 
-	s := server.New(server.LogLevel(log.INFO))
+	s := &server.Server{}
 	s.Run(address)
 }

@@ -3,14 +3,13 @@ package client
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/mateusf777/pubsub/domain"
-
-	"github.com/mateusf777/pubsub/log"
 )
 
 // Conn contains the state of the connection with the pubsub server to perform the necessary operations
@@ -20,16 +19,9 @@ type Conn struct {
 	cancel    context.CancelFunc
 	drained   chan struct{}
 	nextReply int
-	log       log.Logger
 }
 
 type Opt func(c *Conn)
-
-func LogLevel(level log.Level) Opt {
-	return func(c *Conn) {
-		c.log.Level = level
-	}
-}
 
 // Connect makes the connection with the server
 func Connect(address string, opts ...Opt) (*Conn, error) {
@@ -45,7 +37,6 @@ func Connect(address string, opts ...Opt) (*Conn, error) {
 		ps:      ps,
 		cancel:  cancel,
 		drained: make(chan struct{}),
-		log:     log.New().WithContext("pubsub client"),
 	}
 
 	for _, opt := range opts {
@@ -61,7 +52,7 @@ func (c *Conn) Close() {
 	_, err := c.conn.Write(domain.Stop)
 	if err != nil {
 		if !strings.Contains(err.Error(), "broken pipe") {
-			c.log.Error("client close, %v", err)
+			slog.Error("Conn.Close", "error", err)
 		}
 	} else {
 		for {
@@ -73,7 +64,7 @@ func (c *Conn) Close() {
 		}
 	}
 
-	c.log.Info("close")
+	slog.Info("close")
 	c.cancel()
 	<-c.drained
 }
@@ -89,7 +80,7 @@ func (c *Conn) Drain() {
 		break
 	}
 
-	c.log.Info("drained")
+	slog.Info("drained")
 	c.cancel()
 	<-c.drained
 }
@@ -97,7 +88,7 @@ func (c *Conn) Drain() {
 // Publish sends a message for a subject
 func (c *Conn) Publish(subject string, msg []byte) error {
 	result := domain.Join(domain.OpPub, domain.Space, []byte(subject), domain.CRLF, msg, domain.CRLF)
-	c.log.Debug(string(result))
+	slog.Debug(string(result))
 	_, err := c.conn.Write(result)
 	if err != nil {
 		return fmt.Errorf("client Publish, %v", err)
@@ -110,7 +101,7 @@ func (c *Conn) Subscribe(subject string, handle Handler) error {
 	c.ps.nextSub++
 	c.ps.subscribers[c.ps.nextSub] = handle
 	result := fmt.Sprintf("SUB %s %d\r\n", subject, c.ps.nextSub)
-	c.log.Debug(result)
+	slog.Debug(result)
 	_, err := c.conn.Write([]byte(result))
 	if err != nil {
 		return fmt.Errorf("client Subscribe, %v", err)
@@ -123,7 +114,7 @@ func (c *Conn) QueueSubscribe(subject string, queue string, handle Handler) erro
 	c.ps.nextSub++
 	c.ps.subscribers[c.ps.nextSub] = handle
 	result := fmt.Sprintf("SUB %s %d %d %s\r\n", subject, c.ps.nextSub, -1, queue)
-	c.log.Debug(result)
+	slog.Debug(result)
 	_, err := c.conn.Write([]byte(result))
 	if err != nil {
 		return fmt.Errorf("client QueueSubscribe, %v", err)
@@ -136,22 +127,22 @@ func (c *Conn) Request(subject string, msg []byte) (*Message, error) {
 	resCh := make(chan *Message)
 	c.ps.nextSub++
 	c.ps.subscribers[c.ps.nextSub] = func(msg *Message) {
-		c.log.Debug("received %v", msg)
+		slog.Debug("received", "msg", msg)
 		resCh <- msg
 	}
 	c.nextReply++
 	reply := "REPLY." + strconv.Itoa(c.nextReply)
 
 	result := fmt.Sprintf("SUB %s %d\r\n", reply, c.ps.nextSub)
-	c.log.Debug(result)
+	slog.Debug(result)
 	_, err := c.conn.Write([]byte(result))
 	if err != nil {
 		return nil, fmt.Errorf("client Request SUB, %v", err)
 	}
 
-	c.log.Debug(reply)
+	slog.Debug(reply)
 	bResult := domain.Join(domain.OpPub, domain.Space, []byte(subject), domain.Space, []byte(reply), domain.CRLF, msg, domain.CRLF)
-	c.log.Debug(string(bResult))
+	slog.Debug(string(bResult))
 	_, err = c.conn.Write(bResult)
 	if err != nil {
 		return nil, fmt.Errorf("client Request PUB, %v", err)
@@ -168,7 +159,7 @@ func (c *Conn) Request(subject string, msg []byte) (*Message, error) {
 
 func (c *Conn) PublishRequest(subject string, reply string, msg []byte) error {
 	result := domain.Join(domain.OpPub, domain.Space, []byte(subject), domain.Space, []byte(reply), domain.CRLF, msg, domain.CRLF)
-	c.log.Debug(string(result))
+	slog.Debug(string(result))
 	_, err := c.conn.Write(result)
 	if err != nil {
 		return fmt.Errorf("client PublishRequest, %v", err)

@@ -2,12 +2,11 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"sync"
 
-	"github.com/mateusf777/pubsub/example/common"
-
 	"github.com/mateusf777/pubsub/client"
-	logger "github.com/mateusf777/pubsub/log"
+	"github.com/mateusf777/pubsub/example/common"
 )
 
 func main() {
@@ -21,28 +20,25 @@ func main() {
 }
 
 func send(wg *sync.WaitGroup) {
-	log := logger.New()
-	log.Level = logger.INFO
-
 	conn, err := client.Connect(":9999")
 	if err != nil {
-		log.Error("%v", err)
+		slog.Error("send", "error", err)
 		return
 	}
 	defer wg.Done()
 	defer func() {
 		conn.Drain()
-		log.Info("Connection closed")
+		slog.Info("Connection closed")
 	}()
 
-	log.Info("start sending")
+	slog.Info("start sending")
 	for i := 0; i < common.Messages; i++ {
 		msg := fmt.Sprintf("this is a longer test with count: %d", i)
 		err := conn.Publish("test", []byte(msg))
 		if err != nil {
-			log.Error("%v", err)
+			slog.Error("send Publish", "error", err)
 			return
 		}
 	}
-	log.Info("finish sending")
+	slog.Info("finish sending")
 }
