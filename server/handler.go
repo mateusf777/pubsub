@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
 	"strings"
@@ -14,15 +15,15 @@ func (s Server) handleConnection(c net.Conn, ps *domain.PubSub) {
 	defer func(c net.Conn) {
 		err := c.Close()
 		if err != nil {
-			s.log.Error("%v\n", err)
+			slog.Error("Servier.handleConnection", "error", err)
 		}
-		s.log.Info("Closed connection %s\n", c.RemoteAddr().String())
+		slog.Info("Closed connection", "remote", c.RemoteAddr().String())
 	}(c)
 
 	closeHandler := make(chan bool)
 	stopTimeout := make(chan bool)
 
-	s.log.Info("Serving %s\n", c.RemoteAddr().String())
+	slog.Info("Serving", "remote", c.RemoteAddr().String())
 	client := c.RemoteAddr().String()
 
 	timeoutReset := make(chan bool)
@@ -49,7 +50,7 @@ func (s Server) handleConnection(c net.Conn, ps *domain.PubSub) {
 				var result []byte
 				switch {
 				case domain.Equals(bytes.ToUpper(temp), domain.OpStop), domain.Equals(temp, domain.ControlC):
-					s.log.Info("Closing connection with %s\n", c.RemoteAddr().String())
+					slog.Info("Closing connection", "remote", c.RemoteAddr().String())
 					stopTimeout <- true
 					closeHandler <- true
 					break Loop
@@ -71,7 +72,7 @@ func (s Server) handleConnection(c net.Conn, ps *domain.PubSub) {
 					result = s.handlePub(c, ps, client, temp)
 
 				case bytes.HasPrefix(bytes.ToUpper(temp), domain.OpSub):
-					s.log.Debug("sub: %v", temp)
+					slog.Debug("sub", "value", temp)
 					result = s.handleSub(c, ps, client, temp)
 
 				case bytes.HasPrefix(bytes.ToUpper(temp), domain.OpUnsub):
@@ -88,7 +89,7 @@ func (s Server) handleConnection(c net.Conn, ps *domain.PubSub) {
 					if strings.Contains(err.Error(), "broken pipe") || strings.Contains(err.Error(), "connection reset by peer") {
 						continue
 					}
-					s.log.Error("server handler handleConnection, %v\n", err)
+					slog.Error("server handler handleConnection", "error", err)
 				}
 
 				// reset accumulator
@@ -123,10 +124,10 @@ func (s Server) handlePub(c net.Conn, ps *domain.PubSub, client string, received
 		reply := args[2]
 		err := ps.Subscribe(string(reply), client, func(msg domain.Message) {
 			result = domain.Join(domain.OpMsg, domain.Space, []byte(msg.Subject), domain.Space, []byte(msg.Reply), domain.CRLF, msg.Data, domain.CRLF)
-			s.log.Debug("pub sending %s", result)
+			slog.Debug("pub", "value", result)
 			_, err := c.Write(result)
 			if err != nil {
-				s.log.Error("server handler handlePub, %v\n", err)
+				slog.Error("server handler handlePub", "error", err)
 			}
 
 		}, domain.WithMaxMsg(1))
@@ -191,7 +192,7 @@ func (s Server) handleSub(c net.Conn, ps *domain.PubSub, client string, received
 	err := ps.Subscribe(string(args[1]), client, func(msg domain.Message) {
 		err := s.sendMsg(c, id, msg)
 		if err != nil {
-			s.log.Error("%v\n", err)
+			slog.Error("send", "error", err)
 		}
 	}, opts...)
 	if err != nil {
@@ -203,7 +204,7 @@ func (s Server) handleSub(c net.Conn, ps *domain.PubSub, client string, received
 
 func (s Server) sendMsg(conn net.Conn, id int, msg domain.Message) error {
 	result := domain.Join(domain.OpMsg, domain.Space, []byte(msg.Subject), domain.Space, []byte(strconv.Itoa(id)), domain.Space, []byte(msg.Reply), domain.CRLF, msg.Data, domain.CRLF)
-	s.log.Debug("%s", result)
+	slog.Debug("join", "result", result)
 	_, err := conn.Write(result)
 	if err != nil {
 		return fmt.Errorf("server handler sendMsg, %v", err)

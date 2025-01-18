@@ -1,27 +1,26 @@
 package main
 
 import (
+	"log/slog"
+
 	"github.com/mateusf777/pubsub/client"
-	logger "github.com/mateusf777/pubsub/log"
 )
 
 func main() {
-	log := logger.New()
-	log.Level = logger.INFO
 
 	conn, err := client.Connect(":9999")
 	if err != nil {
-		log.Error("%v", err)
+		slog.Error("client.Connect", "error", err)
 		return
 	}
 	defer conn.Close()
 
-	log.Info("request time")
+	slog.Info("request time")
 	resp, err := conn.Request("time", nil)
 	if err != nil {
-		log.Error("%v", err)
+		slog.Error("Request", "error", err)
 		return
 	}
 
-	log.Info("now: %s", resp.Data)
+	slog.Info("now", "data", resp.Data)
 }

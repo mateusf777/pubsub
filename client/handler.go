@@ -3,6 +3,7 @@ package client
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"strconv"
 	"strings"
 
@@ -11,7 +12,7 @@ import (
 
 func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 	defer func(c *Conn) {
-		c.log.Info("Closing connection %s\n", c.conn.RemoteAddr().String())
+		slog.Info("defer handleConnection", "remote", c.conn.RemoteAddr().String())
 		c.drained <- struct{}{}
 	}(c)
 
@@ -33,10 +34,10 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 			case <-ctx.Done():
 				stopTimeout <- true
 				closeHandler <- true
-				c.log.Info("done!")
+				slog.Info("done!")
 				return
 			case netData := <-dataCh:
-				c.log.Debug("Received %v", netData)
+				slog.Debug("Received", "netData", netData)
 				timeoutReset <- true
 
 				temp := bytes.TrimSpace(netData)
@@ -58,16 +59,16 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 					break
 
 				case domain.Equals(bytes.ToUpper(temp), domain.OpERR):
-					c.log.Error("%s", temp)
+					slog.Error("OpERR", "value", temp)
 					break
 
 				case bytes.HasPrefix(bytes.ToUpper(temp), domain.OpMsg):
-					c.log.Debug("in opMsg...")
+					slog.Debug("in opMsg...")
 					if domain.Equals(bytes.ToUpper(accumulator), domain.Empty) {
 						accumulator = temp
 						continue
 					}
-					c.log.Debug("calling handleMsg")
+					slog.Debug("calling handleMsg")
 					handleMsg(c, ps, temp)
 
 				default:
@@ -83,7 +84,7 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 						if strings.Contains(err.Error(), "broken pipe") {
 							continue
 						}
-						c.log.Error("client handleConnection, %v\n", err)
+						slog.Error("client handleConnection", "error", err)
 					}
 				}
 
@@ -100,7 +101,7 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 }
 
 func handleMsg(c *Conn, ps *pubSub, received []byte) {
-	c.log.Debug("handleMsg, %s", received)
+	slog.Debug("handleMsg", "received", received)
 	parts := bytes.Split(received, domain.CRLF)
 	args := bytes.Split(parts[0], domain.Space)
 	msg := parts[1]

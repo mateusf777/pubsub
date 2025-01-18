@@ -1,11 +1,11 @@
 package main
 
 import (
+	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/mateusf777/pubsub/client"
-	logger "github.com/mateusf777/pubsub/log"
 )
 
 const (
@@ -14,17 +14,14 @@ const (
 )
 
 func main() {
-	log := logger.New()
-	log.Level = logger.INFO
-
-	conn, err := client.Connect(":9999", client.LogLevel(logger.INFO))
+	conn, err := client.Connect(":9999")
 	if err != nil {
-		log.Error("%v", err)
+		slog.Error("client.Connect", "error", err)
 		return
 	}
 	defer conn.Close()
 
-	log.Info("Launching %d queue subscribers", queue)
+	slog.Info("Launching subscribers", "queue", queue)
 
 	mu := sync.Mutex{}
 	count := 0
@@ -34,24 +31,24 @@ func main() {
 			mu.Lock()
 			count++
 			mu.Unlock()
-			log.Info("Queue %d, received: %s", n, msg.Data)
+			slog.Info("Queue, received", "queue", n, "msg.Data", msg.Data)
 		})
 		if err != nil {
-			log.Error("Queue %d, error: %v", n, err)
+			slog.Error("Queue", "queue", n, "error", err)
 			return
 		}
-		log.Info("Queue %d, successfully subscribed", n)
+		slog.Info("Queue, successfully subscribed", "queue", n)
 	}
 
-	log.Info("Publishing %d messages...", messages*queue)
+	slog.Info("Publishing messages...", "value", messages*queue)
 	for i := 0; i < messages*queue; i++ {
 		err = conn.Publish("echo", []byte("message to echo"))
 		if err != nil {
-			log.Error("could not publish, %v", err)
+			slog.Error("could not publish", "error", err)
 			continue
 		}
 	}
-	log.Info("Finished publishing messages")
+	slog.Info("Finished publishing messages")
 
 	// Wait for all messages
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -61,11 +58,11 @@ Wait:
 		select {
 		case <-ticker.C:
 			if count >= messages*queue {
-				log.Info("Received all messages")
+				slog.Info("Received all messages")
 				break Wait
 			}
 		case <-timeout.C:
-			log.Info("Timeout! only received %d messages", count)
+			slog.Info("Timeout! only received messages", "count", count)
 			return
 		}
 	}

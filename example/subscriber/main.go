@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -9,16 +10,13 @@ import (
 	"github.com/mateusf777/pubsub/domain"
 
 	"github.com/mateusf777/pubsub/client"
-	logger "github.com/mateusf777/pubsub/log"
 )
 
 func main() {
-	log := logger.New()
-	log.Level = logger.INFO
 
 	conn, err := client.Connect(":9999")
 	if err != nil {
-		log.Error("%v", err)
+		slog.Error("client.Connect", "error", err)
 		return
 	}
 	defer conn.Close()
@@ -27,11 +25,11 @@ func main() {
 	err = conn.Subscribe("test", func(msg *client.Message) {
 		count++
 		if count >= (common.Routines * common.Messages) {
-			log.Info("received %d", count)
+			slog.Info("received", "count", count)
 		}
 	})
 	if err != nil {
-		log.Error("%v", err)
+		slog.Error("Subscribe", "error", err)
 		return
 	}
 
@@ -39,29 +37,29 @@ func main() {
 		resp := strconv.Itoa(count)
 		err = msg.Respond([]byte(resp))
 		if err != nil {
-			log.Error("%v", err)
+			slog.Error("Subscribe", "error", err)
 		}
-		log.Debug("should have returned count")
+		slog.Debug("should have returned count")
 	})
 	if err != nil {
-		log.Error("%v", err)
+		slog.Error("Subscribe", "error", err)
 		return
 	}
 
 	err = conn.Subscribe("time", func(msg *client.Message) {
-		log.Debug("getting time")
+		slog.Debug("getting time")
 		resp := time.Now().String()
 		err = msg.Respond([]byte(resp))
 		if err != nil {
-			log.Error("%v", err)
+			slog.Error("Subscribe", "error", err)
 		}
-		log.Debug("should have returned time")
+		slog.Debug("should have returned time")
 	})
 	if err != nil {
-		log.Error("%v", err)
+		slog.Error("Subscribe", "error", err)
 		return
 	}
 
 	domain.Wait()
-	log.Debug("Closing")
+	slog.Debug("Closing")
 }
