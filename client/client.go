@@ -17,6 +17,7 @@ import (
 type router interface {
 	route(msg *Message, subscriberID int) error
 	addSubHandler(handler Handler) int
+	removeSubHandler(subscriberID int)
 }
 
 // Conn contains the state of the connection with the pubsub server to perform the necessary operations
@@ -76,7 +77,7 @@ func (c *Conn) Close() {
 		}
 	}
 
-	slog.Info("close")
+	logger.Info("close")
 	c.cancel()
 	<-c.drained
 }
@@ -101,7 +102,7 @@ func (c *Conn) Drain() {
 // Uses command PUB <subject> \n\r message \n\r
 func (c *Conn) Publish(subject string, msg []byte) error {
 	result := bytes.Join([][]byte{core.OpPub, core.Space, []byte(subject), core.CRLF, msg, core.CRLF}, nil)
-	slog.Debug(string(result))
+	logger.Debug(string(result))
 
 	if _, err := c.conn.Write(result); err != nil {
 		return fmt.Errorf("client Publish, %v", err)
@@ -111,17 +112,34 @@ func (c *Conn) Publish(subject string, msg []byte) error {
 }
 
 // Subscribe registers a handler that listen for messages sent to a subjects
-// Uses command SUB <subject> <sub.ID>
-func (c *Conn) Subscribe(subject string, handler Handler) error {
+// Uses SUB <subject> <sub.ID>
+func (c *Conn) Subscribe(subject string, handler Handler) (int, error) {
 	subscriberID := c.router.addSubHandler(handler)
 
 	subIDBytes := strconv.AppendInt([]byte{}, int64(subscriberID), 10)
 
-	result := bytes.Join([][]byte{core.OpSub, []byte(subject), subIDBytes, core.CRLF}, nil)
-	slog.Debug(string(result))
+	result := bytes.Join([][]byte{core.OpSub, core.Space, []byte(subject), core.Space, subIDBytes, core.CRLF}, nil)
+	logger.Debug(string(result))
 
 	if _, err := c.conn.Write(result); err != nil {
-		return fmt.Errorf("client Subscribe, %v", err)
+		return -1, fmt.Errorf("client Subscribe, %v", err)
+	}
+
+	return subscriberID, nil
+}
+
+// Unsubscribe removes the handler from router and sends UNSUB to server
+// Uses UNSUB <sub.ID>
+func (c *Conn) Unsubscribe(subscriberID int) error {
+	c.router.removeSubHandler(subscriberID)
+
+	subIDBytes := strconv.AppendInt([]byte{}, int64(subscriberID), 10)
+
+	result := bytes.Join([][]byte{core.OpUnsub, core.Space, subIDBytes, core.CRLF}, nil)
+	logger.Debug(string(result))
+
+	if _, err := c.conn.Write(result); err != nil {
+		return fmt.Errorf("client Unsubscribe, %v", err)
 	}
 
 	return nil
@@ -129,18 +147,18 @@ func (c *Conn) Subscribe(subject string, handler Handler) error {
 
 // QueueSubscribe as subscribe, but the server will randomly load balance among the handlers in the queue
 // Uses SUB <subject> <sub.ID> <queue>
-func (c *Conn) QueueSubscribe(subject string, queue string, handle Handler) error {
-	subscriberID := c.router.addSubHandler(handle)
+func (c *Conn) QueueSubscribe(subject string, queue string, handler Handler) (int, error) {
+	subscriberID := c.router.addSubHandler(handler)
 
 	subIDBytes := strconv.AppendInt([]byte{}, int64(subscriberID), 10)
 
-	result := bytes.Join([][]byte{core.OpSub, []byte(subject), subIDBytes, []byte("-1"), []byte(queue), core.CRLF}, nil)
-	slog.Debug(string(result))
+	result := bytes.Join([][]byte{core.OpSub, core.Space, []byte(subject), core.Space, subIDBytes, core.Space, []byte(queue), core.CRLF}, nil)
+	logger.Debug(string(result))
 
 	if _, err := c.conn.Write(result); err != nil {
-		return fmt.Errorf("client QueueSubscribe, %v", err)
+		return -1, fmt.Errorf("client QueueSubscribe, %v", err)
 	}
-	return nil
+	return subscriberID, nil
 }
 
 // Request as publish, but blocks until receives a response from a subscriber
@@ -152,28 +170,22 @@ func (c *Conn) Request(subject string, msg []byte) (*Message, error) {
 
 func (c *Conn) RequestWithCtx(ctx context.Context, subject string, msg []byte) (*Message, error) {
 	resCh := make(chan *Message)
-	subscriberID := c.router.addSubHandler(func(msg *Message) {
-		slog.Debug("received", "msg", msg)
-		resCh <- msg
-	})
 
 	c.nextReply++
 	reply := strconv.AppendInt([]byte("REPLY."), int64(c.nextReply), 10)
-	slog.Debug(string(reply))
 
-	subIDBytes := strconv.AppendInt([]byte{}, int64(subscriberID), 10)
-
-	result := bytes.Join([][]byte{core.OpSub, []byte(subject), reply, subIDBytes, core.CRLF}, nil)
-	slog.Debug(string(result))
-
-	if _, err := c.conn.Write(result); err != nil {
-		return nil, fmt.Errorf("client Request SUB, %v", err)
+	subscriberID, err := c.Subscribe(string(reply), func(msg *Message) {
+		logger.Debug("received", "msg", msg)
+		resCh <- msg
+	})
+	if err != nil {
+		return nil, fmt.Errorf("client RequestWithCtx, %v", err)
 	}
 
-	bResult := bytes.Join([][]byte{core.OpPub, core.Space, []byte(subject), core.Space, reply, core.CRLF, msg, core.CRLF}, nil)
-	slog.Debug(string(bResult))
+	result := bytes.Join([][]byte{core.OpPub, core.Space, []byte(subject), core.Space, reply, core.CRLF, msg, core.CRLF}, nil)
+	logger.Debug(string(result))
 
-	if _, err := c.conn.Write(bResult); err != nil {
+	if _, err := c.conn.Write(result); err != nil {
 		return nil, fmt.Errorf("client Request PUB, %v", err)
 	}
 
@@ -187,6 +199,9 @@ func (c *Conn) RequestWithCtx(ctx context.Context, subject string, msg []byte) (
 	case <-ctx.Done():
 		return nil, fmt.Errorf("timeout")
 	case r := <-resCh:
+		if err := c.Unsubscribe(subscriberID); err != nil {
+			return nil, fmt.Errorf("client Request Unsubscribe, %v", err)
+		}
 		return r, nil
 	}
 }

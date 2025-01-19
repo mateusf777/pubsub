@@ -82,7 +82,7 @@ func (c *Conn) handle(ctx context.Context) {
 		}
 	}(ctx)
 
-	go core.MonitorInactivity(c.conn, inactiveReset, stopInactiveMonitor, closeHandler)
+	go core.KeepAlive(c.conn, inactiveReset, stopInactiveMonitor, closeHandler)
 
 	<-closeHandler
 
@@ -97,7 +97,7 @@ func (c *Conn) routeMsg(received []byte, dataCh chan []byte) {
 
 	if len(args) < 3 || len(args) > 4 {
 		logger.Debug("routeMsg", "args", args)
-		return //"-ERR should be MSG <subject> <id> [reply-to]\n"
+		return //"-ERR should be MSG <subject> <id> [reply-to] \n\r [payload] \n\r"
 	}
 
 	var reply []byte

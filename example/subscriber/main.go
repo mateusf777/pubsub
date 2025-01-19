@@ -26,7 +26,7 @@ func main() {
 	defer conn.Close()
 
 	count := 0
-	err = conn.Subscribe("test", func(msg *client.Message) {
+	subID, err := conn.Subscribe("test", func(msg *client.Message) {
 		count++
 		if count >= (common.Routines * common.Messages) {
 			slog.Info("received", "count", count)
@@ -36,8 +36,9 @@ func main() {
 		slog.Error("Subscribe", "error", err)
 		return
 	}
+	defer conn.Unsubscribe(subID)
 
-	err = conn.Subscribe("count", func(msg *client.Message) {
+	subID2, err := conn.Subscribe("count", func(msg *client.Message) {
 		resp := strconv.Itoa(count)
 		err = msg.Respond([]byte(resp))
 		if err != nil {
@@ -49,8 +50,9 @@ func main() {
 		slog.Error("Subscribe", "error", err)
 		return
 	}
+	defer conn.Unsubscribe(subID2)
 
-	err = conn.Subscribe("time", func(msg *client.Message) {
+	subID3, err := conn.Subscribe("time", func(msg *client.Message) {
 		slog.Debug("getting time")
 		resp := time.Now().String()
 		err = msg.Respond([]byte(resp))
@@ -63,6 +65,7 @@ func main() {
 		slog.Error("Subscribe", "error", err)
 		return
 	}
+	defer conn.Unsubscribe(subID3)
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)

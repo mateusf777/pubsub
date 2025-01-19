@@ -35,6 +35,10 @@ func (ps *msgRouter) addSubHandler(handler Handler) int {
 	return nextSub
 }
 
+func (ps *msgRouter) removeSubHandler(subscriberID int) {
+	delete(ps.subHandlers, subscriberID)
+}
+
 // Message contains data and metadata about a message sent from a publisher to a subscriber
 type Message struct {
 	conn    *Conn

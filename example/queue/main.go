@@ -32,7 +32,7 @@ func main() {
 	count := 0
 	for i := 0; i < queue; i++ {
 		n := i
-		err = conn.QueueSubscribe("echo", "queue", func(msg *client.Message) {
+		_, err := conn.QueueSubscribe("echo", "queue", func(msg *client.Message) {
 			mu.Lock()
 			count++
 			mu.Unlock()
@@ -42,6 +42,7 @@ func main() {
 			slog.Error("Queue", "queue", n, "error", err)
 			return
 		}
+		//defer conn.Unsubscribe(subID)
 		slog.Info("Queue, successfully subscribed", "queue", n)
 	}
 

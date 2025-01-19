@@ -83,7 +83,7 @@ func handleConnection(c net.Conn, ps *core.PubSub) {
 		}
 	}()
 
-	go core.MonitorInactivity(c, inactivityReset, stopInactivityMonitor, closeHandler)
+	go core.KeepAlive(c, inactivityReset, stopInactivityMonitor, closeHandler)
 
 	<-closeHandler
 	ps.UnsubAll(client)
@@ -109,16 +109,14 @@ func handlePub(c net.Conn, ps *core.PubSub, client string, received []byte, data
 	// subscribe for reply
 	if len(args) == 3 {
 		reply := args[2]
-		err := ps.Subscribe(string(reply), client, func(msg core.Message) {
+		if err := ps.Subscribe(string(reply), client, func(msg core.Message) {
 			result = bytes.Join([][]byte{core.OpMsg, core.Space, []byte(msg.Subject), core.Space, []byte(msg.Reply), core.CRLF, msg.Data, core.CRLF}, nil)
 			slog.Debug("pub", "value", result)
 			_, err := c.Write(result)
 			if err != nil {
 				slog.Error("server handler handlePub", "error", err)
 			}
-
-		}, core.WithMaxMsg(1))
-		if err != nil {
+		}); err != nil {
 			return bytes.Join([][]byte{core.OpERR, core.Space, []byte(err.Error())}, nil)
 		}
 		opts = append(opts, core.WithReply(string(reply)))
@@ -158,19 +156,15 @@ func handleSub(c net.Conn, ps *core.PubSub, client string, received []byte) []by
 
 	// parse
 	args := bytes.Split(received, core.Space)
-	if len(args) < 3 || len(args) > 5 {
-		return []byte("-ERR should be SUB <subject> <id> [max-msg] [group]\n")
+	if len(args) < 3 || len(args) > 4 {
+		return []byte("-ERR should be SUB <subject> <id> [group]\n")
 	}
 
 	id, _ := strconv.Atoi(string(args[2]))
 	opts := make([]core.SubOpt, 0)
 
 	if len(args) == 4 {
-		maxMsg, _ := strconv.Atoi(string(args[3]))
-		opts = append(opts, core.WithMaxMsg(maxMsg))
-	}
-	if len(args) == 5 {
-		group := args[4]
+		group := args[3]
 		opts = append(opts, core.WithGroup(string(group)))
 	}
 	opts = append(opts, core.WithID(id))
