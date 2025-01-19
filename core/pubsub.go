@@ -195,13 +195,12 @@ func (ps *PubSub) run() {
 	}()
 
 	for msg := range ps.msgCh {
-		ps.routeAndClean(msg)
+		ps.route(msg)
 	}
 }
 
 // TODO: some documentation to explain what it does wouldn't be bad
-// TODO: can we extract cleaning and still have good performance?
-func (ps *PubSub) routeAndClean(msg Message) {
+func (ps *PubSub) route(msg Message) {
 	hs, _ := ps.handlersMap.Load(msg.Subject)
 
 	// handlers with countMsg == maxMsg

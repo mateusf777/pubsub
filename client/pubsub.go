@@ -9,28 +9,30 @@ import (
 // Handler is a function to handle messages sent to subjects to which it's subscribed
 type Handler func(*Message)
 
-type pubSub struct {
+type msgRouter struct {
 	msgCh       chan *Message
-	nextSub     int
-	subscribers map[int]Handler
+	subHandlers map[int]Handler
 }
 
-// TODO: we could refactor this constructor to make it easier to unit test
-// Add exportable Config struct
-// keep non exportable pubsub struct
-func newPubSub() *pubSub {
-	return &pubSub{
+func newMsgRouter() *msgRouter {
+	return &msgRouter{
 		msgCh:       make(chan *Message),
-		subscribers: make(map[int]Handler),
+		subHandlers: make(map[int]Handler),
 	}
 }
 
-func (ps *pubSub) publish(id int, msg *Message) error {
-	if handle, ok := ps.subscribers[id]; ok {
+func (ps *msgRouter) route(msg *Message, subscriberID int) error {
+	if handle, ok := ps.subHandlers[subscriberID]; ok {
 		handle(msg)
 		return nil
 	}
-	return fmt.Errorf("the subscriber %d was not found", id)
+	return fmt.Errorf("the subscriber %d was not found", subscriberID)
+}
+
+func (ps *msgRouter) addSubHandler(handler Handler) int {
+	nextSub := len(ps.subHandlers) + 1
+	ps.subHandlers[nextSub] = handler
+	return nextSub
 }
 
 // Message contains data and metadata about a message sent from a publisher to a subscriber

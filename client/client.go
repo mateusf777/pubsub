@@ -14,10 +14,15 @@ import (
 	"github.com/mateusf777/pubsub/core"
 )
 
+type router interface {
+	route(msg *Message, subscriberID int) error
+	addSubHandler(handler Handler) int
+}
+
 // Conn contains the state of the connection with the pubsub server to perform the necessary operations
 type Conn struct {
 	conn      net.Conn
-	ps        *pubSub
+	router    router
 	cancel    context.CancelFunc
 	drained   chan struct{}
 	nextReply int
@@ -41,21 +46,17 @@ func Connect(address string) (*Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	ps := newPubSub()
 
-	// TODO: this probably need configuration. Unit tests will benefit from that
 	ctx, cancel := context.WithCancel(context.Background())
-	nc := &Conn{
+	c := &Conn{
 		conn:    conn,
-		ps:      ps,
+		router:  newMsgRouter(),
 		cancel:  cancel,
 		drained: make(chan struct{}),
 	}
+	go c.handle(ctx)
 
-	// TODO: this handleConnection order of parameters is strange. ctx should be the first one.
-	// Why it is not the first one?
-	go handleConnection(nc, ctx, ps)
-	return nc, nil
+	return c, nil
 }
 
 // Close sends the "stop" operation so the server can clean up the resources
@@ -109,16 +110,17 @@ func (c *Conn) Publish(subject string, msg []byte) error {
 	return nil
 }
 
-// Subscribe registers a handler that listen for messages sent to a subjets
+// Subscribe registers a handler that listen for messages sent to a subjects
 // Uses command SUB <subject> <sub.ID>
-func (c *Conn) Subscribe(subject string, handle Handler) error {
-	c.ps.nextSub++
-	c.ps.subscribers[c.ps.nextSub] = handle
-	// TODO: why publish is using core.OpPub but SUB is not?
-	result := fmt.Sprintf("SUB %s %d\r\n", subject, c.ps.nextSub)
-	slog.Debug(result)
+func (c *Conn) Subscribe(subject string, handler Handler) error {
+	subscriberID := c.router.addSubHandler(handler)
 
-	if _, err := c.conn.Write([]byte(result)); err != nil {
+	subIDBytes := strconv.AppendInt([]byte{}, int64(subscriberID), 10)
+
+	result := bytes.Join([][]byte{core.OpSub, []byte(subject), subIDBytes, core.CRLF}, nil)
+	slog.Debug(string(result))
+
+	if _, err := c.conn.Write(result); err != nil {
 		return fmt.Errorf("client Subscribe, %v", err)
 	}
 
@@ -128,13 +130,14 @@ func (c *Conn) Subscribe(subject string, handle Handler) error {
 // QueueSubscribe as subscribe, but the server will randomly load balance among the handlers in the queue
 // Uses SUB <subject> <sub.ID> <queue>
 func (c *Conn) QueueSubscribe(subject string, queue string, handle Handler) error {
-	c.ps.nextSub++
-	c.ps.subscribers[c.ps.nextSub] = handle
-	// TODO: why publish is using core.OpPub but SUB is not?
-	result := fmt.Sprintf("SUB %s %d %d %s\r\n", subject, c.ps.nextSub, -1, queue)
-	slog.Debug(result)
+	subscriberID := c.router.addSubHandler(handle)
 
-	if _, err := c.conn.Write([]byte(result)); err != nil {
+	subIDBytes := strconv.AppendInt([]byte{}, int64(subscriberID), 10)
+
+	result := bytes.Join([][]byte{core.OpSub, []byte(subject), subIDBytes, []byte("-1"), []byte(queue), core.CRLF}, nil)
+	slog.Debug(string(result))
+
+	if _, err := c.conn.Write(result); err != nil {
 		return fmt.Errorf("client QueueSubscribe, %v", err)
 	}
 	return nil
@@ -144,36 +147,44 @@ func (c *Conn) QueueSubscribe(subject string, queue string, handle Handler) erro
 // Creates a subscription to receive reply: SUB <subject> REPLY.<ID>
 // Then publishes request PUB <subject> REPLY.<ID> \n\r message \n\r
 func (c *Conn) Request(subject string, msg []byte) (*Message, error) {
+	return c.RequestWithCtx(context.Background(), subject, msg)
+}
+
+func (c *Conn) RequestWithCtx(ctx context.Context, subject string, msg []byte) (*Message, error) {
 	resCh := make(chan *Message)
-	c.ps.nextSub++
-	c.ps.subscribers[c.ps.nextSub] = func(msg *Message) {
+	subscriberID := c.router.addSubHandler(func(msg *Message) {
 		slog.Debug("received", "msg", msg)
 		resCh <- msg
-	}
+	})
 
 	c.nextReply++
-	reply := "REPLY." + strconv.Itoa(c.nextReply)
-	slog.Debug(reply)
+	reply := strconv.AppendInt([]byte("REPLY."), int64(c.nextReply), 10)
+	slog.Debug(string(reply))
 
-	// TODO: why publish is using core.OpPub but SUB is not?
-	result := fmt.Sprintf("SUB %s %d\r\n", reply, c.ps.nextSub)
-	slog.Debug(result)
+	subIDBytes := strconv.AppendInt([]byte{}, int64(subscriberID), 10)
 
-	if _, err := c.conn.Write([]byte(result)); err != nil {
+	result := bytes.Join([][]byte{core.OpSub, []byte(subject), reply, subIDBytes, core.CRLF}, nil)
+	slog.Debug(string(result))
+
+	if _, err := c.conn.Write(result); err != nil {
 		return nil, fmt.Errorf("client Request SUB, %v", err)
 	}
 
-	bResult := bytes.Join([][]byte{core.OpPub, core.Space, []byte(subject), core.Space, []byte(reply), core.CRLF, msg, core.CRLF}, nil)
+	bResult := bytes.Join([][]byte{core.OpPub, core.Space, []byte(subject), core.Space, reply, core.CRLF, msg, core.CRLF}, nil)
 	slog.Debug(string(bResult))
 
 	if _, err := c.conn.Write(bResult); err != nil {
 		return nil, fmt.Errorf("client Request PUB, %v", err)
 	}
 
-	// TODO: move this to context since it's a client lib
-	timeout := time.NewTimer(10 * time.Minute)
+	var cancel context.CancelFunc
+	if _, ok := ctx.Deadline(); !ok {
+		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+	}
+
 	select {
-	case <-timeout.C:
+	case <-ctx.Done():
 		return nil, fmt.Errorf("timeout")
 	case r := <-resCh:
 		return r, nil

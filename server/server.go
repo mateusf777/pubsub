@@ -33,8 +33,8 @@ func acceptClients(l net.Listener) {
 	for {
 		c, err := l.Accept()
 		if err != nil {
-			// Todo: better handle connection to stop hiding errors like this
 			if strings.Contains(err.Error(), core.CloseErr) {
+				slog.Error("Server.acceptClient (CloseErr)", "error", err)
 				return
 			}
 			slog.Error("Server.acceptClients", "error", err)

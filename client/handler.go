@@ -9,7 +9,7 @@ import (
 	"github.com/mateusf777/pubsub/core"
 )
 
-func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
+func (c *Conn) handle(ctx context.Context) {
 	defer func(c *Conn) {
 		logger.Info("Closing connection", "remote", c.conn.RemoteAddr().String())
 		c.drained <- struct{}{}
@@ -59,7 +59,7 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 				case bytes.HasPrefix(bytes.ToUpper(data), core.OpMsg):
 					logger.Debug("in opMsg...")
 					logger.Debug("calling handleMsg")
-					handleMsg(c, ps, data, dataCh)
+					c.routeMsg(data, dataCh)
 
 				default:
 					if bytes.Equal(data, core.Empty) {
@@ -74,7 +74,7 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 						if strings.Contains(err.Error(), "broken pipe") {
 							continue
 						}
-						logger.Error("client handleConnection", "error", err)
+						logger.Error("client handle", "error", err)
 					}
 				}
 
@@ -89,14 +89,14 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 	return
 }
 
-func handleMsg(c *Conn, ps *pubSub, received []byte, dataCh chan []byte) {
-	logger.Debug("handleMsg", "received", received)
+func (c *Conn) routeMsg(received []byte, dataCh chan []byte) {
+	logger.Debug("routeMsg", "received", received)
 
 	args := bytes.Split(received, core.Space)
 	msg := <-dataCh
 
 	if len(args) < 3 || len(args) > 4 {
-		// TODO: should it at least log?
+		logger.Debug("routeMsg", "args", args)
 		return //"-ERR should be MSG <subject> <id> [reply-to]\n"
 	}
 
@@ -114,9 +114,9 @@ func handleMsg(c *Conn, ps *pubSub, received []byte, dataCh chan []byte) {
 
 	id, _ := strconv.Atoi(string(args[2]))
 
-	err := ps.publish(id, message)
+	err := c.router.route(message, id)
 	if err != nil {
-		// TODO: should it at least log?
+		logger.Error("route", "error", err)
 		return // fmt.Sprintf("-ERR %v\n", err)
 	}
 }
