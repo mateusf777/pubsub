@@ -41,17 +41,17 @@ func handleConnection(c net.Conn, ps *core.PubSub) {
 
 			var result []byte
 			switch {
-			case core.Equals(bytes.ToUpper(data), core.OpStop), core.Equals(data, core.ControlC):
+			case bytes.Equal(bytes.ToUpper(data), core.OpStop), bytes.Equal(data, core.ControlC):
 				slog.Info("Closing connection", "remote", c.RemoteAddr().String())
 				stopInactivityMonitor <- true
 				closeHandler <- true
 				break
 
-			case core.Equals(bytes.ToUpper(data), core.OpPing):
+			case bytes.Equal(bytes.ToUpper(data), core.OpPing):
 				result = bytes.Join([][]byte{core.OpPong, core.CRLF}, nil)
 				break
 
-			case core.Equals(bytes.ToUpper(data), core.OpPong):
+			case bytes.Equal(bytes.ToUpper(data), core.OpPong):
 				result = core.OK
 				break
 
@@ -66,7 +66,7 @@ func handleConnection(c net.Conn, ps *core.PubSub) {
 				result = handleUnsub(ps, client, data)
 
 			default:
-				if core.Equals(data, core.Empty) {
+				if bytes.Equal(data, core.Empty) {
 					continue
 				}
 				result = bytes.Join([][]byte{[]byte("-ERR invalid protocol"), core.CRLF}, nil)

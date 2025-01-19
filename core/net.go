@@ -13,6 +13,7 @@ import (
 
 const IdleTimeout = 5 * time.Second
 
+// TODO: documentation with explanation for each op
 // Protocol operations
 var (
 	OpStop  = []byte{'S', 'T', 'O', 'P'}
@@ -52,7 +53,7 @@ func Read(c net.Conn, buffer []byte, dataCh chan []byte) {
 		messages := bytes.Split(toBeSplit, CRLF)
 		accumulator = Empty
 
-		if !bytes.HasSuffix(buffer[:n], CRLF) && !Equals(buffer[:n], ControlC) {
+		if !bytes.HasSuffix(buffer[:n], CRLF) && !bytes.Equal(buffer[:n], ControlC) {
 			accumulator = messages[len(messages)-1]
 			messages = messages[:len(messages)-1]
 		}
@@ -104,8 +105,4 @@ func Wait() {
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	<-sigs
 	fmt.Println()
-}
-
-func Equals(b1 []byte, b2 []byte) bool {
-	return bytes.Compare(b1, b2) == 0
 }

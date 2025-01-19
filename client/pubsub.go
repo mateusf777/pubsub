@@ -15,6 +15,9 @@ type pubSub struct {
 	subscribers map[int]Handler
 }
 
+// TODO: we could refactor this constructor to make it easier to unit test
+// Add exportable Config struct
+// keep non exportable pubsub struct
 func newPubSub() *pubSub {
 	return &pubSub{
 		msgCh:       make(chan *Message),

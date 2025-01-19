@@ -42,17 +42,17 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 
 				var result []byte
 				switch {
-				case core.Equals(bytes.ToUpper(data), core.OpPing):
+				case bytes.Equal(bytes.ToUpper(data), core.OpPing):
 					result = bytes.Join([][]byte{core.OpPong, core.CRLF}, nil)
 					break
 
-				case core.Equals(bytes.ToUpper(data), core.OpPong):
+				case bytes.Equal(bytes.ToUpper(data), core.OpPong):
 					break
 
-				case core.Equals(bytes.ToUpper(data), core.OpOK):
+				case bytes.Equal(bytes.ToUpper(data), core.OpOK):
 					break
 
-				case core.Equals(bytes.ToUpper(data), core.OpERR):
+				case bytes.Equal(bytes.ToUpper(data), core.OpERR):
 					logger.Error("OpERR", "value", data)
 					break
 
@@ -62,13 +62,13 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 					handleMsg(c, ps, data, dataCh)
 
 				default:
-					if core.Equals(data, core.Empty) {
+					if bytes.Equal(data, core.Empty) {
 						continue
 					}
 					result = core.Empty
 				}
 
-				if !core.Equals(result, core.Empty) {
+				if !bytes.Equal(result, core.Empty) {
 					_, err := c.conn.Write(result)
 					if err != nil {
 						if strings.Contains(err.Error(), "broken pipe") {
@@ -91,10 +91,12 @@ func handleConnection(c *Conn, ctx context.Context, ps *pubSub) {
 
 func handleMsg(c *Conn, ps *pubSub, received []byte, dataCh chan []byte) {
 	logger.Debug("handleMsg", "received", received)
-	parts := bytes.Split(received, core.CRLF)
-	args := bytes.Split(parts[0], core.Space)
+
+	args := bytes.Split(received, core.Space)
 	msg := <-dataCh
+
 	if len(args) < 3 || len(args) > 4 {
+		// TODO: should it at least log?
 		return //"-ERR should be MSG <subject> <id> [reply-to]\n"
 	}
 
@@ -114,6 +116,7 @@ func handleMsg(c *Conn, ps *pubSub, received []byte, dataCh chan []byte) {
 
 	err := ps.publish(id, message)
 	if err != nil {
+		// TODO: should it at least log?
 		return // fmt.Sprintf("-ERR %v\n", err)
 	}
 }

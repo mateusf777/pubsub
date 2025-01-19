@@ -199,6 +199,8 @@ func (ps *PubSub) run() {
 	}
 }
 
+// TODO: some documentation to explain what it does wouldn't be bad
+// TODO: can we extract cleaning and still have good performance?
 func (ps *PubSub) routeAndClean(msg Message) {
 	hs, _ := ps.handlersMap.Load(msg.Subject)
 

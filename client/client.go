@@ -23,8 +23,6 @@ type Conn struct {
 	nextReply int
 }
 
-type Opt func(c *Conn)
-
 var logger *slog.Logger
 
 func SetLogLevel(level slog.Level) {
@@ -38,13 +36,14 @@ func init() {
 }
 
 // Connect makes the connection with the server
-func Connect(address string, opts ...Opt) (*Conn, error) {
+func Connect(address string) (*Conn, error) {
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
 		return nil, err
 	}
 	ps := newPubSub()
 
+	// TODO: this probably need configuration. Unit tests will benefit from that
 	ctx, cancel := context.WithCancel(context.Background())
 	nc := &Conn{
 		conn:    conn,
@@ -53,10 +52,8 @@ func Connect(address string, opts ...Opt) (*Conn, error) {
 		drained: make(chan struct{}),
 	}
 
-	for _, opt := range opts {
-		opt(nc)
-	}
-
+	// TODO: this handleConnection order of parameters is strange. ctx should be the first one.
+	// Why it is not the first one?
 	go handleConnection(nc, ctx, ps)
 	return nc, nil
 }
@@ -104,10 +101,11 @@ func (c *Conn) Drain() {
 func (c *Conn) Publish(subject string, msg []byte) error {
 	result := bytes.Join([][]byte{core.OpPub, core.Space, []byte(subject), core.CRLF, msg, core.CRLF}, nil)
 	slog.Debug(string(result))
-	_, err := c.conn.Write(result)
-	if err != nil {
+
+	if _, err := c.conn.Write(result); err != nil {
 		return fmt.Errorf("client Publish, %v", err)
 	}
+
 	return nil
 }
 
@@ -116,12 +114,14 @@ func (c *Conn) Publish(subject string, msg []byte) error {
 func (c *Conn) Subscribe(subject string, handle Handler) error {
 	c.ps.nextSub++
 	c.ps.subscribers[c.ps.nextSub] = handle
+	// TODO: why publish is using core.OpPub but SUB is not?
 	result := fmt.Sprintf("SUB %s %d\r\n", subject, c.ps.nextSub)
 	slog.Debug(result)
-	_, err := c.conn.Write([]byte(result))
-	if err != nil {
+
+	if _, err := c.conn.Write([]byte(result)); err != nil {
 		return fmt.Errorf("client Subscribe, %v", err)
 	}
+
 	return nil
 }
 
@@ -130,10 +130,11 @@ func (c *Conn) Subscribe(subject string, handle Handler) error {
 func (c *Conn) QueueSubscribe(subject string, queue string, handle Handler) error {
 	c.ps.nextSub++
 	c.ps.subscribers[c.ps.nextSub] = handle
+	// TODO: why publish is using core.OpPub but SUB is not?
 	result := fmt.Sprintf("SUB %s %d %d %s\r\n", subject, c.ps.nextSub, -1, queue)
 	slog.Debug(result)
-	_, err := c.conn.Write([]byte(result))
-	if err != nil {
+
+	if _, err := c.conn.Write([]byte(result)); err != nil {
 		return fmt.Errorf("client QueueSubscribe, %v", err)
 	}
 	return nil
@@ -149,24 +150,27 @@ func (c *Conn) Request(subject string, msg []byte) (*Message, error) {
 		slog.Debug("received", "msg", msg)
 		resCh <- msg
 	}
+
 	c.nextReply++
 	reply := "REPLY." + strconv.Itoa(c.nextReply)
+	slog.Debug(reply)
 
+	// TODO: why publish is using core.OpPub but SUB is not?
 	result := fmt.Sprintf("SUB %s %d\r\n", reply, c.ps.nextSub)
 	slog.Debug(result)
-	_, err := c.conn.Write([]byte(result))
-	if err != nil {
+
+	if _, err := c.conn.Write([]byte(result)); err != nil {
 		return nil, fmt.Errorf("client Request SUB, %v", err)
 	}
 
-	slog.Debug(reply)
 	bResult := bytes.Join([][]byte{core.OpPub, core.Space, []byte(subject), core.Space, []byte(reply), core.CRLF, msg, core.CRLF}, nil)
 	slog.Debug(string(bResult))
-	_, err = c.conn.Write(bResult)
-	if err != nil {
+
+	if _, err := c.conn.Write(bResult); err != nil {
 		return nil, fmt.Errorf("client Request PUB, %v", err)
 	}
 
+	// TODO: move this to context since it's a client lib
 	timeout := time.NewTimer(10 * time.Minute)
 	select {
 	case <-timeout.C:
