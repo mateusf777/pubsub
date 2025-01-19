@@ -13,6 +13,7 @@ import (
 
 const IdleTimeout = 5 * time.Second
 
+// Protocol operations
 var (
 	OpStop  = []byte{'S', 'T', 'O', 'P'}
 	OpPub   = []byte{'P', 'U', 'B'}
@@ -26,6 +27,7 @@ var (
 	OpMsg = []byte{'M', 'S', 'G'}
 )
 
+// Helper values
 var (
 	CRLF     = []byte{'\r', '\n'}
 	Space    = []byte{' '}
