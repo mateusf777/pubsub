@@ -1,4 +1,4 @@
-github.com/mateusf777/pubsub v0.0.6 h1:pczQpSKMTUaJB7L9O97O9MR1Qh9eqZ99UcSrEkHn82Y=
-github.com/mateusf777/pubsub v0.0.6/go.mod h1:6hUUf1kWWnLOBTphpO5a+fW6sd6paJGOK/6HiwClrqc=
-github.com/mateusf777/pubsub/client v0.0.6 h1:dn5KOamEA9iswuP9+gtRhRQtkEYSRZnp+qaC1rv4aI8=
-github.com/mateusf777/pubsub/client v0.0.6/go.mod h1:AvdGDW5Iqgw/Mfj2jehx1dfta2c9PAMPK94cjCw3GCs=
+github.com/mateusf777/pubsub/client v0.1.1 h1:spXCdwx0i+Kk+CgYmEmzg1rgKr2igEWZtpUNmwTztvk=
+github.com/mateusf777/pubsub/client v0.1.1/go.mod h1:FuebRVt5BGXnyDfTbJVGvuJvorYf6WX/rA3//BWpybM=
+github.com/mateusf777/pubsub/core v0.1.0 h1:8XpILOLmiJQtvFTywKLiFK/gfHRyECBSa/rG/CesJUw=
+github.com/mateusf777/pubsub/core v0.1.0/go.mod h1:dZSUcXVZmTdhBqhEKTqRN5adeCgfJ22StDfjqw3V3Tg=
