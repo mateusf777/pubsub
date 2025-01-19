@@ -8,11 +8,9 @@ import (
 	"github.com/mateusf777/pubsub/core"
 )
 
-type Server struct{}
-
 // Run stars to listen in the given address
 // Ex: server.Run("localhost:9999")
-func (s Server) Run(address string) {
+func Run(address string) {
 	l, err := net.Listen("tcp4", address)
 	if err != nil {
 		slog.Error("Server.Run", "error", err)
@@ -20,7 +18,7 @@ func (s Server) Run(address string) {
 	}
 	defer l.Close()
 
-	go s.acceptClients(l)
+	go acceptClients(l)
 
 	slog.Info("PubSub accepting connections", "address", address)
 	core.Wait()
@@ -28,7 +26,7 @@ func (s Server) Run(address string) {
 }
 
 // Starts a concurrent handler for each connection
-func (s Server) acceptClients(l net.Listener) {
+func acceptClients(l net.Listener) {
 	ps := core.NewPubSub()
 	defer ps.Stop()
 
@@ -43,6 +41,6 @@ func (s Server) acceptClients(l net.Listener) {
 			return
 		}
 
-		go s.handleConnection(c, ps)
+		go handleConnection(c, ps)
 	}
 }

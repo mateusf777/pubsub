@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/mateusf777/pubsub/client"
+
 	"github.com/mateusf777/pubsub/example/common"
 )
 

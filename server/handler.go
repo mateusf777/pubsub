@@ -11,7 +11,7 @@ import (
 	"github.com/mateusf777/pubsub/core"
 )
 
-func (s Server) handleConnection(c net.Conn, ps *core.PubSub) {
+func handleConnection(c net.Conn, ps *core.PubSub) {
 	defer func(c net.Conn) {
 		err := c.Close()
 		if err != nil {
@@ -56,11 +56,11 @@ func (s Server) handleConnection(c net.Conn, ps *core.PubSub) {
 				break
 
 			case bytes.HasPrefix(bytes.ToUpper(data), core.OpPub):
-				result = s.handlePub(c, ps, client, data, dataCh)
+				result = handlePub(c, ps, client, data, dataCh)
 
 			case bytes.HasPrefix(bytes.ToUpper(data), core.OpSub):
 				slog.Debug("sub", "value", data)
-				result = s.handleSub(c, ps, client, data)
+				result = handleSub(c, ps, client, data)
 
 			case bytes.HasPrefix(bytes.ToUpper(data), core.OpUnsub):
 				result = handleUnsub(ps, client, data)
@@ -90,7 +90,7 @@ func (s Server) handleConnection(c net.Conn, ps *core.PubSub) {
 	return
 }
 
-func (s Server) handlePub(c net.Conn, ps *core.PubSub, client string, received []byte, dataCh chan []byte) []byte {
+func handlePub(c net.Conn, ps *core.PubSub, client string, received []byte, dataCh chan []byte) []byte {
 	// default result
 	result := core.OK
 
@@ -152,7 +152,7 @@ func handleUnsub(ps *core.PubSub, client string, received []byte) []byte {
 	return result
 }
 
-func (s Server) handleSub(c net.Conn, ps *core.PubSub, client string, received []byte) []byte {
+func handleSub(c net.Conn, ps *core.PubSub, client string, received []byte) []byte {
 	// default result
 	result := core.OK
 
@@ -177,7 +177,7 @@ func (s Server) handleSub(c net.Conn, ps *core.PubSub, client string, received [
 
 	// dispatch
 	err := ps.Subscribe(string(args[1]), client, func(msg core.Message) {
-		err := s.sendMsg(c, id, msg)
+		err := sendMsg(c, id, msg)
 		if err != nil {
 			slog.Error("send", "error", err)
 		}
@@ -189,7 +189,7 @@ func (s Server) handleSub(c net.Conn, ps *core.PubSub, client string, received [
 	return result
 }
 
-func (s Server) sendMsg(conn net.Conn, id int, msg core.Message) error {
+func sendMsg(conn net.Conn, id int, msg core.Message) error {
 	result := bytes.Join([][]byte{core.OpMsg, core.Space, []byte(msg.Subject), core.Space, []byte(strconv.Itoa(id)), core.Space, []byte(msg.Reply), core.CRLF, msg.Data, core.CRLF}, nil)
 	slog.Debug("join", "result", result)
 	_, err := conn.Write(result)

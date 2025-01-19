@@ -100,6 +100,7 @@ func (c *Conn) Drain() {
 }
 
 // Publish sends a message for a subject
+// Uses command PUB <subject> \n\r message \n\r
 func (c *Conn) Publish(subject string, msg []byte) error {
 	result := bytes.Join([][]byte{core.OpPub, core.Space, []byte(subject), core.CRLF, msg, core.CRLF}, nil)
 	slog.Debug(string(result))
@@ -111,6 +112,7 @@ func (c *Conn) Publish(subject string, msg []byte) error {
 }
 
 // Subscribe registers a handler that listen for messages sent to a subjets
+// Uses command SUB <subject> <sub.ID>
 func (c *Conn) Subscribe(subject string, handle Handler) error {
 	c.ps.nextSub++
 	c.ps.subscribers[c.ps.nextSub] = handle
@@ -124,6 +126,7 @@ func (c *Conn) Subscribe(subject string, handle Handler) error {
 }
 
 // QueueSubscribe as subscribe, but the server will randomly load balance among the handlers in the queue
+// Uses SUB <subject> <sub.ID> <queue>
 func (c *Conn) QueueSubscribe(subject string, queue string, handle Handler) error {
 	c.ps.nextSub++
 	c.ps.subscribers[c.ps.nextSub] = handle
@@ -137,6 +140,8 @@ func (c *Conn) QueueSubscribe(subject string, queue string, handle Handler) erro
 }
 
 // Request as publish, but blocks until receives a response from a subscriber
+// Creates a subscription to receive reply: SUB <subject> REPLY.<ID>
+// Then publishes request PUB <subject> REPLY.<ID> \n\r message \n\r
 func (c *Conn) Request(subject string, msg []byte) (*Message, error) {
 	resCh := make(chan *Message)
 	c.ps.nextSub++
@@ -169,15 +174,4 @@ func (c *Conn) Request(subject string, msg []byte) (*Message, error) {
 	case r := <-resCh:
 		return r, nil
 	}
-}
-
-func (c *Conn) PublishRequest(subject string, reply string, msg []byte) error {
-	result := bytes.Join([][]byte{core.OpPub, core.Space, []byte(subject), core.Space, []byte(reply), core.CRLF, msg, core.CRLF}, nil)
-	slog.Debug(string(result))
-	_, err := c.conn.Write(result)
-	if err != nil {
-		return fmt.Errorf("client PublishRequest, %v", err)
-	}
-
-	return nil
 }

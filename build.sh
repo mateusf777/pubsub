@@ -1,7 +1,10 @@
 #!/usr/bin/sh
 
-go build -o ./build/ps-server .  &&
-  go build -o ./build/queue ./example/queue &&
-  go build -o ./build/subscriber ./example/subscriber &&
-  go build -o ./build/publisher ./example/publisher &&
-  go build -o ./build/request ./example/request
+cd server
+go build -o ../build/ps-server ./cmd/pubsub
+
+cd ../example
+go build -o ../build/queue ./queue &&
+go build -o ../build/subscriber ./subscriber &&
+go build -o ../build/publisher ./publisher &&
+go build -o ../build/request ./request

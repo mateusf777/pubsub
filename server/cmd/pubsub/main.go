@@ -5,8 +5,6 @@ import (
 	"os"
 
 	"github.com/mateusf777/pubsub/server"
-
-	"github.com/mateusf777/pubsub/core"
 )
 
 // ATTENTION: This server has NO SECURITY whatsoever
@@ -19,10 +17,9 @@ func main() {
 	slog.SetLogLoggerLevel(slog.LevelInfo)
 
 	address := os.Getenv("PUBSUB_ADDRESS")
-	if address == string(core.Empty) {
+	if len(address) == 0 {
 		address = defaultAddress
 	}
 
-	s := &server.Server{}
-	s.Run(address)
+	server.Run(address)
 }
