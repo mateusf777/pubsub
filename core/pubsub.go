@@ -87,13 +87,6 @@ func (ps *PubSub) Publish(subject string, data []byte, opts ...PubOpt) error {
 // SubOpt optional parameter pattern for Subscribe
 type SubOpt func(*HandlerSubject)
 
-// WithMaxMsg returns a SubOpt that populates HandlerSubject with the maxMsg
-func WithMaxMsg(maxMsg int) SubOpt {
-	return func(hs *HandlerSubject) {
-		hs.maxMsg = maxMsg
-	}
-}
-
 // WithGroup returns a SubOpt that populates HandlerSubject with the group
 func WithGroup(group string) SubOpt {
 	return func(hs *HandlerSubject) {
@@ -165,6 +158,8 @@ func (ps *PubSub) Unsubscribe(subject string, client string, id int) error {
 	return nil
 }
 
+// UnsubAll removes all subscriber handlers.
+// Mainly used for cleanup before stopping a server.
 func (ps *PubSub) UnsubAll(client string) {
 	ps.handlersMap.Range(func(subject, hs interface{}) bool {
 		handlers := hs.([]HandlerSubject)
@@ -199,25 +194,16 @@ func (ps *PubSub) run() {
 	}
 }
 
-// TODO: some documentation to explain what it does wouldn't be bad
+// route find the subscriber handlers for the message subject, and pass the message to each one.
+// If a subscriber handler is in a group, prepare the groups for load balance.
 func (ps *PubSub) route(msg Message) {
 	hs, _ := ps.handlersMap.Load(msg.Subject)
-
-	// handlers with countMsg == maxMsg
-	finishedHandlers := make([]int, 0)
 
 	// handlers in a group to be rand load balanced
 	groups := make(map[string][]HandlerSubject)
 
 	subHandlers := hs.([]HandlerSubject)
-	for i, hs := range subHandlers {
-		// prepare cleaning
-		if hs.maxMsg > 0 {
-			hs.countMsg += 1
-			if hs.countMsg == hs.maxMsg {
-				finishedHandlers = append(finishedHandlers, i)
-			}
-		}
+	for _, hs := range subHandlers {
 
 		// prepare groups for load balancing
 		if hs.group != "" {
@@ -230,7 +216,7 @@ func (ps *PubSub) route(msg Message) {
 			continue
 		}
 
-		// route
+		// pass message to the handler
 		hs.handler(msg)
 	}
 
@@ -241,12 +227,6 @@ func (ps *PubSub) route(msg Message) {
 		}
 		hs := handlers[rand.Intn(len(handlers))]
 		hs.handler(msg)
-	}
-
-	// execute cleaning
-	for _, i := range finishedHandlers {
-		subHandlers[i] = subHandlers[len(subHandlers)-1]
-		ps.handlersMap.Store(msg.Subject, subHandlers[:len(subHandlers)-1])
 	}
 }
 

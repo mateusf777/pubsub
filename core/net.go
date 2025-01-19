@@ -13,26 +13,60 @@ import (
 
 const IdleTimeout = 5 * time.Second
 
-// TODO: documentation with explanation for each op
-// Protocol operations
+// Protocol
 var (
-	OpStop  = []byte{'S', 'T', 'O', 'P'}
-	OpPub   = []byte{'P', 'U', 'B'}
-	OpSub   = []byte{'S', 'U', 'B'}
-	OpUnsub = []byte{'U', 'N', 'S', 'U', 'B'}
-	OpPong  = []byte{'P', 'O', 'N', 'G'}
-	OpPing  = []byte{'P', 'I', 'N', 'G'}
+	// OpPub (PUB <subject> [reply_id] \n\r [msg] \n\r).
+	// Publish a message to a subject with optional reply subject.
+	// Client -> Server
+	OpPub = []byte{'P', 'U', 'B'}
 
-	OpOK  = []byte{'+', 'O', 'K'}
-	OpERR = []byte{'-', 'E', 'R', 'R'}
+	// OpSub (SUB <subject> <sub_id> [queue] \n\r).
+	// Subscribe to a subject with optional queue grouping.
+	// Client -> Server
+	OpSub = []byte{'S', 'U', 'B'}
+
+	// OpUnsub (UNSUB <sub_id> \n\r)
+	// Unsubscribes from a subject
+	// Client -> Server
+	OpUnsub = []byte{'U', 'N', 'S', 'U', 'B'}
+
+	// OpStop (STOP \n\r)
+	// Tells server to clean up connection.
+	// Client -> Server
+	OpStop = []byte{'S', 'T', 'O', 'P'}
+
+	// OpPong (PONG \n\r)
+	// Keep-alive response
+	// Client -> Server
+	OpPong = []byte{'P', 'O', 'N', 'G'}
+
+	// OpPing (PING \n\r)
+	// Keep-alive message
+	// Server -> Client
+	OpPing = []byte{'P', 'I', 'N', 'G'}
+
+	// OpMsg (MSG <subject> <sub_id> [reply-to] \n\r [payload] \n\r)
+	// Delivers a message to a subscriber
+	// Server -> Client
 	OpMsg = []byte{'M', 'S', 'G'}
+
+	// OpOK (+OK \n\r)
+	// Acknowledges protocol messages.
+	// Server -> Client
+	OpOK = []byte{'+', 'O', 'K'}
+
+	// OpERR (-ERR <error> \n\r)
+	// Indicates protocol error.
+	// Server -> Client
+	OpERR = []byte{'-', 'E', 'R', 'R'}
 )
 
 // Helper values
 var (
+	Empty []byte
+
 	CRLF     = []byte{'\r', '\n'}
 	Space    = []byte{' '}
-	Empty    []byte
 	OK       = bytes.Join([][]byte{OpOK, CRLF}, nil)
 	ControlC = []byte{255, 244, 255, 253, 6}
 	Stop     = bytes.Join([][]byte{OpStop, CRLF}, nil)
@@ -41,6 +75,7 @@ var (
 
 const CloseErr = "use of closed network connection"
 
+// Read connection stream, adds data to buffer, split messages and send them to the channel.
 func Read(c net.Conn, buffer []byte, dataCh chan []byte) {
 	accumulator := Empty
 	for {
@@ -69,7 +104,9 @@ func Read(c net.Conn, buffer []byte, dataCh chan []byte) {
 	}
 }
 
-func MonitorInactivity(c net.Conn, reset chan bool, stop chan bool, close chan bool) {
+// KeepAlive mechanism. Normal traffic resets idle timeout. It sends PING to client if idle timeout happens.
+// After two pings without response, sends signal to close connection.
+func KeepAlive(c net.Conn, reset chan bool, stop chan bool, close chan bool) {
 	checkTicket := time.NewTicker(IdleTimeout)
 	count := 0
 active:
@@ -100,6 +137,7 @@ active:
 	}
 }
 
+// Wait for system signal (SIGINT, SIGTERM)
 func Wait() {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
