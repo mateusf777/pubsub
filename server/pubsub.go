@@ -8,7 +8,6 @@ import (
 
 const noIndex = -1
 
-// PubSub represents a message router for handling the operations PUB, SUB and UNSUB
 type PubSub struct {
 	msgCh       chan Message
 	handlersMap *sync.Map //map[string][]HandlerSubject
@@ -68,7 +67,7 @@ func WithReply(subject string) PubOpt {
 // Returns an error if there are no subscribers for the subject
 func (ps *PubSub) Publish(subject string, data []byte, opts ...PubOpt) error {
 	if !ps.hasSubscriber(subject) {
-		// if there's no subscriber it's ok and it doesn't return an error, but short-circuit here
+		// If there's no subscriber it's ok: it doesn't return an error and short-circuit here.
 		return nil
 	}
 
@@ -94,6 +93,7 @@ func WithGroup(group string) SubOpt {
 	}
 }
 
+// WithID returns a SubOpt that populates HandlerSubject with the id
 func WithID(id int) SubOpt {
 	return func(hs *HandlerSubject) {
 		hs.id = id
@@ -230,6 +230,7 @@ func (ps *PubSub) route(msg Message) {
 	}
 }
 
+// hasSubscriber verifies if the handlersMap contains a handler for the subject
 func (ps *PubSub) hasSubscriber(subject string) bool {
 	if handlers, ok := ps.handlersMap.Load(subject); ok {
 		return len(handlers.([]HandlerSubject)) > 0
