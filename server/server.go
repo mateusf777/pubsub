@@ -3,7 +3,10 @@ package server
 import (
 	"log/slog"
 	"net"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/mateusf777/pubsub/core"
 )
@@ -21,20 +24,20 @@ func Run(address string) {
 	go acceptClients(l)
 
 	slog.Info("PubSub accepting connections", "address", address)
-	core.Wait()
+	Wait()
 	slog.Info("Stopping PubSub")
 }
 
 // Starts a concurrent handler for each connection
 func acceptClients(l net.Listener) {
-	ps := core.NewPubSub()
+	ps := NewPubSub(PubSubConfig{})
 	defer ps.Stop()
 
 	for {
 		c, err := l.Accept()
 		if err != nil {
-			if strings.Contains(err.Error(), core.CloseErr) {
-				slog.Error("Server.acceptClient (CloseErr)", "error", err)
+			if strings.Contains(err.Error(), core.ClosedErr) {
+				slog.Debug("Server.acceptClient (ClosedErr)", "error", err)
 				return
 			}
 			slog.Error("Server.acceptClients", "error", err)
@@ -43,4 +46,11 @@ func acceptClients(l net.Listener) {
 
 		go handleConnection(c, ps)
 	}
+}
+
+// Wait for system signals (SIGINT, SIGTERM)
+func Wait() {
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	<-signals
 }

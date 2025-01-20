@@ -1,19 +1,13 @@
-package core
+package server
 
 import (
 	"fmt"
+	"log/slog"
 	"math/rand"
 	"sync"
 )
 
 const noIndex = -1
-
-type PubSub struct {
-	msgCh       chan Message
-	handlersMap *sync.Map //map[string][]HandlerSubject
-	groupsMap   *sync.Map //map[string][]HandlerSubject
-	running     bool
-}
 
 // Message routed from a PUB op to handlers previously registerer by SUB ops
 type Message struct {
@@ -36,11 +30,32 @@ type HandlerSubject struct {
 // Handler is the type of the function that will handle the message received from a PUB op
 type Handler func(msg Message)
 
+// PubSub it's the engine that routes messages from publishers to subscribers.
+type PubSub struct {
+	msgCh       chan Message
+	handlersMap *sync.Map
+	running     bool
+}
+
+// PubSubConfig it's the optional configuration for creating a PubSub
+type PubSubConfig struct {
+	MsgCh       chan Message
+	HandlersMap *sync.Map
+}
+
 // NewPubSub creates a PubSub and starts the message route
-func NewPubSub() *PubSub {
+func NewPubSub(cfg PubSubConfig) *PubSub {
+	if cfg.MsgCh == nil {
+		cfg.MsgCh = make(chan Message)
+	}
+
+	if cfg.HandlersMap == nil {
+		cfg.HandlersMap = new(sync.Map)
+	}
+
 	ps := PubSub{
-		msgCh:       make(chan Message),
-		handlersMap: new(sync.Map),
+		msgCh:       cfg.MsgCh,
+		handlersMap: cfg.HandlersMap,
 		running:     false,
 	}
 	go ps.run()
@@ -64,11 +79,11 @@ func WithReply(subject string) PubOpt {
 }
 
 // Publish constructs a message based in a PUB op and sends it to be routed to the subscribers
-// Returns an error if there are no subscribers for the subject
-func (ps *PubSub) Publish(subject string, data []byte, opts ...PubOpt) error {
+func (ps *PubSub) Publish(subject string, data []byte, opts ...PubOpt) {
 	if !ps.hasSubscriber(subject) {
 		// If there's no subscriber it's ok: it doesn't return an error and short-circuit here.
-		return nil
+		slog.Debug("There are no subscribers, message will be dropped")
+		return
 	}
 
 	message := Message{
@@ -80,7 +95,6 @@ func (ps *PubSub) Publish(subject string, data []byte, opts ...PubOpt) error {
 	}
 
 	ps.msgCh <- message
-	return nil
 }
 
 // SubOpt optional parameter pattern for Subscribe
@@ -181,11 +195,11 @@ func (ps *PubSub) UnsubAll(client string) {
 // It's started by the NewPubSub
 func (ps *PubSub) run() {
 
-	logger.Info("Message router started")
+	slog.Info("Message router started")
 	ps.running = true
 
 	defer func() {
-		logger.Info("Message router stopped")
+		slog.Info("Message router stopped")
 		ps.running = false
 	}()
 

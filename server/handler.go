@@ -11,7 +11,7 @@ import (
 	"github.com/mateusf777/pubsub/core"
 )
 
-func handleConnection(c net.Conn, ps *core.PubSub) {
+func handleConnection(c net.Conn, ps *PubSub) {
 	defer func(c net.Conn) {
 		err := c.Close()
 		if err != nil {
@@ -27,11 +27,18 @@ func handleConnection(c net.Conn, ps *core.PubSub) {
 	slog.Info("Serving", "remote", c.RemoteAddr().String())
 	client := c.RemoteAddr().String()
 
-	buffer := make([]byte, 1024)
 	dataCh := make(chan []byte, 100)
 
+	connReader, err := core.NewConnectionReader(core.ConnectionReaderConfig{
+		Conn:     c,
+		DataChan: dataCh,
+	})
+	if err != nil {
+		slog.Error("Server.handleConnection", "error", err)
+	}
+
 	go func() {
-		go core.Read(c, buffer, dataCh)
+		go connReader.Read()
 
 		// dispatch
 		for netData := range dataCh {
@@ -48,7 +55,7 @@ func handleConnection(c net.Conn, ps *core.PubSub) {
 				break
 
 			case bytes.Equal(bytes.ToUpper(data), core.OpPing):
-				result = bytes.Join([][]byte{core.OpPong, core.CRLF}, nil)
+				result = core.BuildBytes(core.OpPong, core.CRLF)
 				break
 
 			case bytes.Equal(bytes.ToUpper(data), core.OpPong):
@@ -69,7 +76,7 @@ func handleConnection(c net.Conn, ps *core.PubSub) {
 				if bytes.Equal(data, core.Empty) {
 					continue
 				}
-				result = bytes.Join([][]byte{[]byte("-ERR invalid protocol"), core.CRLF}, nil)
+				result = core.BuildBytes([]byte("-ERR invalid protocol"), core.CRLF)
 			}
 
 			_, err := c.Write(result)
@@ -83,14 +90,25 @@ func handleConnection(c net.Conn, ps *core.PubSub) {
 		}
 	}()
 
-	go core.KeepAlive(c, inactivityReset, stopInactivityMonitor, closeHandler)
+	keepAlive, err := core.NewKeepAlive(core.KeepAliveConfig{
+		Conn:    c,
+		ResetCh: inactivityReset,
+		StopCh:  stopInactivityMonitor,
+		CloseCh: closeHandler,
+	})
+	if err != nil {
+		slog.Error("Server handler handleConnection", "error", err)
+	}
+
+	go keepAlive.Run()
 
 	<-closeHandler
 	ps.UnsubAll(client)
 	return
 }
 
-func handlePub(c net.Conn, ps *core.PubSub, client string, received []byte, dataCh chan []byte) []byte {
+// handlePub Handles PUB message. See core.OpPub.
+func handlePub(c net.Conn, ps *PubSub, client string, received []byte, dataCh chan []byte) []byte {
 	// default result
 	result := core.OK
 
@@ -104,34 +122,32 @@ func handlePub(c net.Conn, ps *core.PubSub, client string, received []byte, data
 		return []byte("-ERR should be PUB <subject> [reply-to]\n")
 	}
 
-	opts := make([]core.PubOpt, 0)
+	opts := make([]PubOpt, 0)
 
 	// subscribe for reply
 	if len(args) == 3 {
 		reply := args[2]
-		if err := ps.Subscribe(string(reply), client, func(msg core.Message) {
-			result = bytes.Join([][]byte{core.OpMsg, core.Space, []byte(msg.Subject), core.Space, []byte(msg.Reply), core.CRLF, msg.Data, core.CRLF}, nil)
+		if err := ps.Subscribe(string(reply), client, func(msg Message) {
+			result = core.BuildBytes(core.OpMsg, core.Space, []byte(msg.Subject), core.Space, []byte(msg.Reply), core.CRLF, msg.Data, core.CRLF)
 			slog.Debug("pub", "value", result)
 			_, err := c.Write(result)
 			if err != nil {
 				slog.Error("server handler handlePub", "error", err)
 			}
 		}); err != nil {
-			return bytes.Join([][]byte{core.OpERR, core.Space, []byte(err.Error())}, nil)
+			return core.BuildBytes(core.OpERR, core.Space, []byte(err.Error()))
 		}
-		opts = append(opts, core.WithReply(string(reply)))
+		opts = append(opts, WithReply(string(reply)))
 	}
 
 	// dispatch
-	err := ps.Publish(string(args[1]), msg, opts...)
-	if err != nil {
-		return bytes.Join([][]byte{core.OpERR, core.Space, []byte(err.Error())}, nil)
-	}
+	ps.Publish(string(args[1]), msg, opts...)
 
 	return result
 }
 
-func handleUnsub(ps *core.PubSub, client string, received []byte) []byte {
+// handleUnsub Handles UNSUB. See core.OpUnsub.
+func handleUnsub(ps *PubSub, client string, received []byte) []byte {
 	// default result
 	result := core.OK
 
@@ -145,12 +161,13 @@ func handleUnsub(ps *core.PubSub, client string, received []byte) []byte {
 	// dispatch
 	err := ps.Unsubscribe(string(args[1]), client, id)
 	if err != nil {
-		return bytes.Join([][]byte{core.OpERR, core.Space, []byte(err.Error())}, nil)
+		return core.BuildBytes(core.OpERR, core.Space, []byte(err.Error()))
 	}
 	return result
 }
 
-func handleSub(c net.Conn, ps *core.PubSub, client string, received []byte) []byte {
+// handleSub Handles SUB. See core.OpSub.
+func handleSub(c net.Conn, ps *PubSub, client string, received []byte) []byte {
 	// default result
 	result := core.OK
 
@@ -161,34 +178,39 @@ func handleSub(c net.Conn, ps *core.PubSub, client string, received []byte) []by
 	}
 
 	id, _ := strconv.Atoi(string(args[2]))
-	opts := make([]core.SubOpt, 0)
+	opts := make([]SubOpt, 0)
 
 	if len(args) == 4 {
 		group := args[3]
-		opts = append(opts, core.WithGroup(string(group)))
+		opts = append(opts, WithGroup(string(group)))
 	}
-	opts = append(opts, core.WithID(id))
+	opts = append(opts, WithID(id))
 
 	// dispatch
-	err := ps.Subscribe(string(args[1]), client, func(msg core.Message) {
+	err := ps.Subscribe(string(args[1]), client, func(msg Message) {
 		err := sendMsg(c, id, msg)
 		if err != nil {
 			slog.Error("send", "error", err)
 		}
 	}, opts...)
 	if err != nil {
-		return bytes.Join([][]byte{core.OpERR, core.Space, []byte(err.Error())}, nil)
+		return core.BuildBytes(core.OpERR, core.Space, []byte(err.Error()))
 	}
 
 	return result
 }
 
-func sendMsg(conn net.Conn, id int, msg core.Message) error {
-	result := bytes.Join([][]byte{core.OpMsg, core.Space, []byte(msg.Subject), core.Space, []byte(strconv.Itoa(id)), core.Space, []byte(msg.Reply), core.CRLF, msg.Data, core.CRLF}, nil)
-	slog.Debug("join", "result", result)
+// sendMsg sends MSG back to client. See core.OpMsg.
+func sendMsg(conn net.Conn, id int, msg Message) error {
+
+	subID := strconv.AppendInt([]byte{}, int64(id), 10)
+	result := core.BuildBytes(core.OpMsg, core.Space, []byte(msg.Subject), core.Space, subID, core.Space, []byte(msg.Reply), core.CRLF, msg.Data, core.CRLF)
+	slog.Debug("MSG message", "result", result)
+
 	_, err := conn.Write(result)
 	if err != nil {
 		return fmt.Errorf("server handler sendMsg, %v", err)
 	}
+
 	return nil
 }

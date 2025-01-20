@@ -1,47 +1,16 @@
-package core
+package server
 
 import (
 	"bytes"
+	"context"
+	"reflect"
+	"sync"
 	"testing"
 	"time"
 )
 
-func TestNewPubSub(t *testing.T) {
-	ps := NewPubSub()
-
-	if ps.msgCh == nil {
-		t.Errorf("channel not initiated")
-	}
-
-	if ps.handlersMap == nil {
-		t.Errorf("handlers not initiated")
-	}
-
-	timer := time.NewTimer(time.Second)
-	for {
-		select {
-		case <-timer.C:
-			t.Errorf("the pubsub was not started and timed out")
-		default:
-			if ps.running {
-				break
-			}
-		}
-		break
-	}
-}
-
-func TestPublishWithoutSub(t *testing.T) {
-	ps := NewPubSub()
-
-	err := ps.Publish("test", []byte{})
-	if err != nil {
-		t.Errorf("should not have returned an error")
-	}
-}
-
 func TestSubscribe(t *testing.T) {
-	ps := NewPubSub()
+	ps := NewPubSub(PubSubConfig{})
 
 	err := ps.Subscribe("test", "client", func(msg Message) {
 		t.Logf("%v", msg)
@@ -60,7 +29,7 @@ func TestSubscribe(t *testing.T) {
 }
 
 func TestReceiveMessage(t *testing.T) {
-	ps := NewPubSub()
+	ps := NewPubSub(PubSubConfig{})
 	test := []byte("test")
 	received := false
 	err := ps.Subscribe("test", "client", func(msg Message) {
@@ -74,10 +43,7 @@ func TestReceiveMessage(t *testing.T) {
 		t.Errorf("should not return an error, %+v", err)
 	}
 
-	err = ps.Publish("test", test)
-	if err != nil {
-		t.Errorf("should not return an error, %+v", err)
-	}
+	ps.Publish("test", test)
 
 	timer := time.NewTimer(time.Second)
 	for {
@@ -90,5 +56,189 @@ func TestReceiveMessage(t *testing.T) {
 			}
 		}
 		break
+	}
+}
+
+func TestNewPubSub(t *testing.T) {
+	type args struct {
+		cfg PubSubConfig
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "Create with default config",
+			args: args{},
+		},
+		{
+			name: "Create with config",
+			args: args{
+				cfg: PubSubConfig{
+					MsgCh:       make(chan Message),
+					HandlersMap: new(sync.Map),
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NewPubSub(tt.args.cfg)
+			if got == nil {
+				t.Errorf("NewPubSub() returned nil")
+			}
+			if got.msgCh == nil {
+				t.Errorf("NewPubSub() channel not initialized")
+			}
+			if got.handlersMap == nil {
+				t.Errorf("NewPubSub() handlers not initialized")
+			}
+			if got.running {
+				t.Errorf("PubSub already running")
+			}
+
+			timer := time.NewTimer(time.Second)
+			for {
+				select {
+				case <-timer.C:
+					t.Errorf("the pubsub was not started and timed out")
+				default:
+					if got.running {
+						break
+					}
+				}
+				break
+			}
+		})
+	}
+}
+
+func TestPubSub_Stop(t *testing.T) {
+
+	ps := NewPubSub(PubSubConfig{
+		MsgCh: make(chan Message),
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		select {
+		case <-ps.msgCh:
+			break
+		case <-ctx.Done():
+			t.Errorf("Took too long to stop, somthing is wrong")
+			break
+		}
+	}()
+
+	ps.Stop()
+	wg.Wait()
+
+}
+
+func TestPubSub_Publish(t *testing.T) {
+	subject := "test"
+	handlers := new(sync.Map)
+	handlers.Store(subject, []HandlerSubject{{}})
+
+	type fields struct {
+		msgCh       chan Message
+		handlersMap *sync.Map
+	}
+	type args struct {
+		subject string
+		data    []byte
+		opts    []PubOpt
+	}
+	tests := []struct {
+		name        string
+		fields      fields
+		args        args
+		wantMsg     Message
+		wantDropMsg bool
+	}{
+		{
+			name: "Publish",
+			fields: fields{
+				msgCh:       make(chan Message),
+				handlersMap: handlers,
+			},
+			args: args{
+				subject: subject,
+				data:    []byte("test"),
+			},
+			wantMsg: Message{
+				Subject: subject,
+				Data:    []byte("test"),
+			},
+		},
+		{
+			name: "Publish with reply",
+			fields: fields{
+				msgCh:       make(chan Message),
+				handlersMap: handlers,
+			},
+			args: args{
+				subject: subject,
+				data:    []byte("test"),
+				opts:    []PubOpt{WithReply("reply")},
+			},
+			wantMsg: Message{
+				Subject: subject,
+				Data:    []byte("test"),
+				Reply:   "reply",
+			},
+		},
+		{
+			name: "Publish, but there are no handlers",
+			fields: fields{
+				msgCh:       make(chan Message),
+				handlersMap: new(sync.Map),
+			},
+			args: args{
+				subject: subject,
+				data:    []byte("test"),
+			},
+			wantDropMsg: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ps := &PubSub{
+				msgCh:       tt.fields.msgCh,
+				handlersMap: tt.fields.handlersMap,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+			defer cancel()
+
+			wg := &sync.WaitGroup{}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+
+				select {
+				case msg := <-ps.msgCh:
+					if !reflect.DeepEqual(msg, tt.wantMsg) {
+						t.Errorf("the message was not what the expected, %v", msg)
+					}
+					break
+				case <-ctx.Done():
+					if tt.wantDropMsg {
+						break
+					}
+					t.Errorf("Took too long to receive message, somthing is wrong")
+					break
+				}
+			}()
+
+			ps.Publish(tt.args.subject, tt.args.data, tt.args.opts...)
+			wg.Wait()
+		})
 	}
 }
