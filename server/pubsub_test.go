@@ -599,3 +599,61 @@ func TestPubSub_run(t *testing.T) {
 		})
 	}
 }
+
+func Test_msgRouter_Route(t *testing.T) {
+	type args struct {
+		subHandlers []HandlerSubject
+		msg         Message
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "Route",
+			args: args{
+				subHandlers: []HandlerSubject{
+					{subject: "test", client: "test", id: 1, handler: func(msg Message) {
+						assert.Equal(t, "test", msg.Subject)
+						assert.Equal(t, []byte("test"), msg.Data)
+					}},
+				},
+				msg: Message{
+					Subject: "test",
+					Data:    []byte("test"),
+				},
+			},
+		},
+		{
+			name: "Route for groups",
+			args: args{
+				subHandlers: []HandlerSubject{
+					{subject: "test", client: "test", id: 1, group: "test", handler: func(msg Message) {
+						assert.Equal(t, "test", msg.Subject)
+						assert.Equal(t, []byte("test"), msg.Data)
+					}},
+				},
+				msg: Message{
+					Subject: "test",
+					Data:    []byte("test"),
+				},
+			},
+		},
+		{
+			name: "Route but there's no handler",
+			args: args{
+				subHandlers: []HandlerSubject{},
+				msg: Message{
+					Subject: "test",
+					Data:    []byte("test"),
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &msgRouter{}
+			r.Route(tt.args.subHandlers, tt.args.msg)
+		})
+	}
+}

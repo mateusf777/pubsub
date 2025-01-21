@@ -238,9 +238,6 @@ func (r *msgRouter) Route(subHandlers []HandlerSubject, msg Message) {
 
 	// rand load balance by group
 	for _, handlers := range groups {
-		if handlers == nil {
-			continue
-		}
 		hs := handlers[rand.Intn(len(handlers))]
 		hs.handler(msg)
 	}
