@@ -502,3 +502,70 @@ func TestPubSub_Unsubscribe(t *testing.T) {
 		})
 	}
 }
+
+func TestPubSub_UnsubAll(t *testing.T) {
+	handlers := new(sync.Map)
+
+	type fields struct {
+		msgCh       chan Message
+		handlersMap *sync.Map
+	}
+	type args struct {
+		client string
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		preTest func()
+		verify  bool
+	}{
+		{
+			name: "UnsubAll",
+			fields: fields{
+				msgCh:       make(chan Message),
+				handlersMap: handlers,
+			},
+			args: args{
+				client: "test",
+			},
+			preTest: func() {
+				handlers.Store("test", []HandlerSubject{
+					{subject: "test", client: "test", id: 1, handler: func(msg Message) {}},
+					{subject: "test", client: "test", id: 2, handler: func(msg Message) {}},
+				})
+			},
+			verify: true,
+		},
+		{
+			name: "UnsubAll but client has no handlers stored",
+			fields: fields{
+				msgCh:       make(chan Message),
+				handlersMap: new(sync.Map),
+			},
+			args: args{
+				client: "test",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ps := &PubSub{
+				msgCh:       tt.fields.msgCh,
+				handlersMap: tt.fields.handlersMap,
+			}
+			if tt.preTest != nil {
+				tt.preTest()
+			}
+			ps.UnsubAll(tt.args.client)
+
+			if tt.verify {
+				v, ok := tt.fields.handlersMap.Load(tt.args.client)
+				assert.True(t, ok)
+				hs, ok := v.([]HandlerSubject)
+				assert.True(t, ok)
+				assert.Equal(t, len(hs), 0)
+			}
+		})
+	}
+}
