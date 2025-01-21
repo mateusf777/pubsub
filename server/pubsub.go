@@ -116,11 +116,8 @@ func WithID(id int) SubOpt {
 
 // Subscribe register the subject subscribers received in a SUB op
 func (ps *PubSub) Subscribe(subject string, client string, handler Handler, opts ...SubOpt) error {
-	if ps.handlersMap == nil {
-		return fmt.Errorf("the pubsub was not correctly initiated, the list of handlers is nil")
-	}
-	if subject == "" || handler == nil {
-		return fmt.Errorf("invalid parameters, both subject and handler need to be given")
+	if subject == "" || client == "" || handler == nil {
+		return fmt.Errorf("invalid parameters, subject, client and handler need to be given")
 	}
 
 	if _, ok := ps.handlersMap.Load(subject); !ok {

@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestSubscribe(t *testing.T) {
@@ -239,6 +241,142 @@ func TestPubSub_Publish(t *testing.T) {
 
 			ps.Publish(tt.args.subject, tt.args.data, tt.args.opts...)
 			wg.Wait()
+		})
+	}
+}
+
+func TestPubSub_Subscribe(t *testing.T) {
+	type fields struct {
+		msgCh       chan Message
+		handlersMap *sync.Map
+	}
+	type args struct {
+		subject string
+		client  string
+		handler Handler
+		opts    []SubOpt
+	}
+	tests := []struct {
+		name        string
+		fields      fields
+		args        args
+		wantErr     bool
+		wantHandler HandlerSubject
+	}{
+		{
+			name: "Subscribe",
+			fields: fields{
+				msgCh:       make(chan Message),
+				handlersMap: new(sync.Map),
+			},
+			args: args{
+				subject: "test",
+				client:  "test",
+				handler: func(msg Message) {},
+			},
+			wantErr: false,
+			wantHandler: HandlerSubject{
+				subject: "test",
+				client:  "test",
+			},
+		},
+		{
+			name: "Subscribe with group",
+			fields: fields{
+				msgCh:       make(chan Message),
+				handlersMap: new(sync.Map),
+			},
+			args: args{
+				subject: "test",
+				client:  "test",
+				handler: func(msg Message) {},
+				opts:    []SubOpt{WithGroup("test")},
+			},
+			wantErr: false,
+			wantHandler: HandlerSubject{
+				subject: "test",
+				client:  "test",
+				group:   "test",
+			},
+		},
+		{
+			name: "Subscribe with id",
+			fields: fields{
+				msgCh:       make(chan Message),
+				handlersMap: new(sync.Map),
+			},
+			args: args{
+				subject: "test",
+				client:  "test",
+				handler: func(msg Message) {},
+				opts:    []SubOpt{WithID(1)},
+			},
+			wantErr: false,
+			wantHandler: HandlerSubject{
+				subject: "test",
+				client:  "test",
+				id:      1,
+			},
+		},
+		{
+			name: "Subscribe without subject",
+			fields: fields{
+				msgCh:       make(chan Message),
+				handlersMap: new(sync.Map),
+			},
+			args: args{
+				client:  "test",
+				handler: func(msg Message) {},
+			},
+			wantErr: true,
+		},
+		{
+			name: "Subscribe without handler",
+			fields: fields{
+				msgCh:       make(chan Message),
+				handlersMap: new(sync.Map),
+			},
+			args: args{
+				subject: "test",
+				client:  "test",
+			},
+			wantErr: true,
+		},
+		{
+			name: "Subscribe without client",
+			fields: fields{
+				msgCh:       make(chan Message),
+				handlersMap: new(sync.Map),
+			},
+			args: args{
+				subject: "test",
+				handler: func(msg Message) {},
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ps := &PubSub{
+				msgCh:       tt.fields.msgCh,
+				handlersMap: tt.fields.handlersMap,
+			}
+
+			if err := ps.Subscribe(tt.args.subject, tt.args.client, tt.args.handler, tt.args.opts...); (err != nil) != tt.wantErr {
+				t.Errorf("Subscribe() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if !tt.wantErr {
+				v, ok := tt.fields.handlersMap.Load("test")
+				assert.True(t, ok)
+				hs, ok := v.([]HandlerSubject)
+				assert.True(t, ok)
+				assert.Equal(t, len(hs), 1)
+				assert.NotNil(t, hs[0].handler)
+				hs[0].handler = nil
+				assert.Equal(t, hs[0], tt.wantHandler)
+			}
+
 		})
 	}
 }
