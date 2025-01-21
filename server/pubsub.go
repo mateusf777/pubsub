@@ -141,11 +141,8 @@ func (ps *PubSub) Subscribe(subject string, client string, handler Handler, opts
 
 // Unsubscribe removes the subject subscribers received in a UNSUB op
 func (ps *PubSub) Unsubscribe(subject string, client string, id int) error {
-	if ps.handlersMap == nil {
-		return fmt.Errorf("the pubsub was not correctly initiated, the list of handlers is nil")
-	}
-	if subject == "" {
-		return fmt.Errorf("invalid parameters, both subject and handler need to be given")
+	if subject == "" || client == "" {
+		return fmt.Errorf("invalid parameters, subject, client and id need to be given")
 	}
 	if _, ok := ps.handlersMap.Load(subject); !ok {
 		return fmt.Errorf("there's no subscribers for subject[%s]", subject)

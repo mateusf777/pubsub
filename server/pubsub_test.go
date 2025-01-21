@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"reflect"
 	"sync"
 	"testing"
@@ -377,6 +378,127 @@ func TestPubSub_Subscribe(t *testing.T) {
 				assert.Equal(t, hs[0], tt.wantHandler)
 			}
 
+		})
+	}
+}
+
+func TestPubSub_Unsubscribe(t *testing.T) {
+	handlers := new(sync.Map)
+
+	type fields struct {
+		msgCh       chan Message
+		handlersMap *sync.Map
+	}
+	type args struct {
+		subject string
+		client  string
+		id      int
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		preTest func()
+		wantErr assert.ErrorAssertionFunc
+		verify  bool
+	}{
+		{
+			name: "Unsubscribe",
+			fields: fields{
+				msgCh:       make(chan Message),
+				handlersMap: handlers,
+			},
+			args: args{
+				subject: "test",
+				client:  "test",
+				id:      1,
+			},
+			preTest: func() {
+				handlers.Store("test", []HandlerSubject{{
+					subject: "test",
+					client:  "test",
+					id:      1,
+				}})
+			},
+			wantErr: assert.NoError,
+			verify:  true,
+		},
+		{
+			name: "Unsubscribe without subject",
+			fields: fields{
+				msgCh:       make(chan Message),
+				handlersMap: handlers,
+			},
+			args: args{
+				client: "test",
+				id:     1,
+			},
+			wantErr: assert.Error,
+		},
+		{
+			name: "Unsubscribe without client",
+			fields: fields{
+				msgCh:       make(chan Message),
+				handlersMap: handlers,
+			},
+			args: args{
+				subject: "test",
+				id:      1,
+			},
+			wantErr: assert.Error,
+		},
+		{
+			name: "Unsubscribe but the subject is not stored",
+			fields: fields{
+				msgCh:       make(chan Message),
+				handlersMap: handlers,
+			},
+			args: args{
+				subject: "test",
+				client:  "test",
+				id:      1,
+			},
+			preTest: func() {
+				handlers.Delete("test")
+			},
+			wantErr: assert.Error,
+		},
+		{
+			name: "Unsubscribe but the handler is not stored",
+			fields: fields{
+				msgCh:       make(chan Message),
+				handlersMap: handlers,
+			},
+			args: args{
+				subject: "test",
+				client:  "test",
+				id:      1,
+			},
+			preTest: func() {
+				handlers.Store("test", []HandlerSubject{})
+			},
+			wantErr: assert.Error,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ps := &PubSub{
+				msgCh:       tt.fields.msgCh,
+				handlersMap: tt.fields.handlersMap,
+			}
+
+			if tt.preTest != nil {
+				tt.preTest()
+			}
+
+			tt.wantErr(t, ps.Unsubscribe(tt.args.subject, tt.args.client, tt.args.id), fmt.Sprintf("Unsubscribe(%v, %v, %v)", tt.args.subject, tt.args.client, tt.args.id))
+
+			if tt.verify {
+				v, _ := tt.fields.handlersMap.Load(tt.args.subject)
+				hs, ok := v.([]HandlerSubject)
+				assert.True(t, ok)
+				assert.Equal(t, len(hs), 0)
+			}
 		})
 	}
 }
