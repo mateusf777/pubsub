@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"reflect"
@@ -11,56 +10,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 )
-
-func TestSubscribe(t *testing.T) {
-	ps := NewPubSub(PubSubConfig{})
-
-	err := ps.Subscribe("test", "client", func(msg Message) {
-		t.Logf("%v", msg)
-	})
-	if err != nil {
-		t.Errorf("should not return an error, %+v", err)
-	}
-
-	if _, ok := ps.handlersMap.Load("test"); !ok {
-		t.Errorf("the subscriber was not correctly persisted")
-	}
-
-	if !ps.hasSubscriber("test") {
-		t.Errorf("the subscriber was not correctly persisted")
-	}
-}
-
-func TestReceiveMessage(t *testing.T) {
-	ps := NewPubSub(PubSubConfig{})
-	test := []byte("test")
-	received := false
-	err := ps.Subscribe("test", "client", func(msg Message) {
-		received = true
-		if msg.Subject != "test" || bytes.Compare(msg.Data, test) != 0 {
-			t.Errorf("the message was not what the expected, %v", msg)
-		}
-		t.Logf("%v", msg)
-	})
-	if err != nil {
-		t.Errorf("should not return an error, %+v", err)
-	}
-
-	ps.Publish("test", test)
-
-	timer := time.NewTimer(time.Second)
-	for {
-		select {
-		case <-timer.C:
-			t.Errorf("the message was not received and timed out")
-		default:
-			if received {
-				break
-			}
-		}
-		break
-	}
-}
 
 func TestNewPubSub(t *testing.T) {
 	type args struct {
@@ -566,6 +515,87 @@ func TestPubSub_UnsubAll(t *testing.T) {
 				assert.True(t, ok)
 				assert.Equal(t, len(hs), 0)
 			}
+		})
+	}
+}
+
+func TestPubSub_run(t *testing.T) {
+	expectedHandlers := []HandlerSubject{
+		{subject: "test", client: "test", id: 1},
+	}
+	expectedMessage := Message{
+		Subject: "test",
+		Data:    []byte("test"),
+	}
+
+	type fields struct {
+		msgCh       chan Message
+		handlersMap *sync.Map
+		mockRouter  func(m *MockRouter)
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		preTest func(m *sync.Map)
+		message *Message
+	}{
+		{
+			name: "Run",
+			fields: fields{
+				msgCh:       make(chan Message),
+				handlersMap: new(sync.Map),
+				mockRouter: func(m *MockRouter) {
+					m.On("Route", expectedHandlers, expectedMessage).Return(nil)
+				},
+			},
+			preTest: func(m *sync.Map) {
+				m.Store("test", expectedHandlers)
+			},
+			message: &expectedMessage,
+		},
+		{
+			name: "Run, stop, no routing is done",
+			fields: fields{
+				msgCh:       make(chan Message),
+				handlersMap: new(sync.Map),
+			},
+			preTest: func(m *sync.Map) {
+				m.Store("test", expectedHandlers)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRouter := NewMockRouter(t)
+
+			if tt.preTest != nil {
+				tt.preTest(tt.fields.handlersMap)
+			}
+
+			if tt.fields.mockRouter != nil {
+				tt.fields.mockRouter(mockRouter)
+			}
+
+			ps := &PubSub{
+				msgCh:       tt.fields.msgCh,
+				handlersMap: tt.fields.handlersMap,
+				router:      mockRouter,
+			}
+
+			wg := &sync.WaitGroup{}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				ps.run()
+			}()
+
+			if tt.message != nil {
+				tt.fields.msgCh <- *tt.message
+			}
+
+			close(tt.fields.msgCh)
+			wg.Wait()
+
 		})
 	}
 }

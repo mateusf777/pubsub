@@ -30,10 +30,15 @@ type HandlerSubject struct {
 // Handler is the type of the function that will handle the message received from a PUB op
 type Handler func(msg Message)
 
+type Router interface {
+	Route(subHandlers []HandlerSubject, msg Message)
+}
+
 // PubSub it's the engine that routes messages from publishers to subscribers.
 type PubSub struct {
 	msgCh       chan Message
 	handlersMap *sync.Map
+	router      Router
 	running     bool
 }
 
@@ -56,6 +61,7 @@ func NewPubSub(cfg PubSubConfig) *PubSub {
 	ps := PubSub{
 		msgCh:       cfg.MsgCh,
 		handlersMap: cfg.HandlersMap,
+		router:      &msgRouter{},
 		running:     false,
 	}
 	go ps.run()
@@ -198,21 +204,23 @@ func (ps *PubSub) run() {
 	}()
 
 	for msg := range ps.msgCh {
-		ps.route(msg)
+		hs, _ := ps.handlersMap.Load(msg.Subject)
+		subHandlers := hs.([]HandlerSubject)
+
+		ps.router.Route(subHandlers, msg)
 	}
 }
 
-// route find the subscriber handlers for the message subject, and pass the message to each one.
+type msgRouter struct{}
+
+// Route find the subscriber handlers for the message subject, and pass the message to each one.
 // If a subscriber handler is in a group, prepare the groups for load balance.
-func (ps *PubSub) route(msg Message) {
-	hs, _ := ps.handlersMap.Load(msg.Subject)
+func (r *msgRouter) Route(subHandlers []HandlerSubject, msg Message) {
 
 	// handlers in a group to be rand load balanced
 	groups := make(map[string][]HandlerSubject)
 
-	subHandlers := hs.([]HandlerSubject)
 	for _, hs := range subHandlers {
-
 		// prepare groups for load balancing
 		if hs.group != "" {
 			handlers := groups[hs.group]

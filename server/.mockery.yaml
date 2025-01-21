@@ -1,0 +1,12 @@
+dir: "{{.InterfaceDir}}"
+mockname: "Mock{{.InterfaceName}}"
+outpkg: "{{.PackageName}}"
+inpackage: True
+all: True
+with-expecter: True
+issue-845-fix: True
+resolve-type-alias: False
+packages:
+  github.com/mateusf777/pubsub/server:
+      config:
+        recursive: True
