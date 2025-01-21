@@ -3,17 +3,19 @@ package core
 import (
 	"bytes"
 	"errors"
+	"io"
 	"log/slog"
-	"net"
 	"os"
 	"strings"
 	"time"
 )
 
-// Conn wraps net.Conn.
-// This abstraction makes it easier to create mocks for testing.
-type Conn interface {
-	net.Conn
+type Reader interface {
+	io.Reader
+}
+
+type Writer interface {
+	io.Writer
 }
 
 const (
@@ -42,8 +44,8 @@ var (
 	// Client -> Server
 	OpPub = []byte{'P', 'U', 'B'}
 
-	// OpSub (SUB <subject> <sub_id> [queue] \n\r).
-	// Subscribe to a subject with optional queue grouping.
+	// OpSub (SUB <subject> <sub_id> [group] \n\r).
+	// Subscribe to a subject with optional group grouping.
 	// Client -> Server
 	OpSub = []byte{'S', 'U', 'B'}
 
@@ -97,14 +99,14 @@ var (
 
 // ConnectionReaderConfig is used to create a ConnectionReader.
 type ConnectionReaderConfig struct {
-	Conn       Conn
+	Reader     Reader
 	BufferSize int
 	DataChan   chan []byte
 }
 
 // ConnectionReader implements Read.
 type ConnectionReader struct {
-	conn   Conn
+	reader Reader
 	buffer []byte
 	dataCh chan []byte
 }
@@ -112,7 +114,7 @@ type ConnectionReader struct {
 // NewConnectionReader creates a ConnectionReader from configuration.
 // Conn and DataChan are required. BufferSize will use 1024 if a value <= 0 is passed.
 func NewConnectionReader(cfg ConnectionReaderConfig) (*ConnectionReader, error) {
-	if cfg.Conn == nil || cfg.DataChan == nil {
+	if cfg.Reader == nil || cfg.DataChan == nil {
 		return nil, errors.New("required configuration not set")
 	}
 
@@ -121,7 +123,7 @@ func NewConnectionReader(cfg ConnectionReaderConfig) (*ConnectionReader, error) 
 	}
 
 	return &ConnectionReader{
-		conn:   cfg.Conn,
+		reader: cfg.Reader,
 		buffer: make([]byte, cfg.BufferSize),
 		dataCh: cfg.DataChan,
 	}, nil
@@ -131,7 +133,7 @@ func NewConnectionReader(cfg ConnectionReaderConfig) (*ConnectionReader, error) 
 func (cr *ConnectionReader) Read() {
 	accumulator := Empty
 	for {
-		n, err := cr.conn.Read(cr.buffer)
+		n, err := cr.reader.Read(cr.buffer)
 		if err != nil {
 			if strings.Contains(err.Error(), ClosedErr) {
 				logger.Debug("Connection closed")
@@ -165,7 +167,8 @@ func (cr *ConnectionReader) Read() {
 
 // KeepAliveConfig configuration for the keep-alive mechanism
 type KeepAliveConfig struct {
-	Conn        Conn
+	Writer      Writer
+	Client      string
 	ResetCh     chan bool
 	StopCh      chan bool
 	CloseCh     chan bool
@@ -174,7 +177,8 @@ type KeepAliveConfig struct {
 
 // KeepAlive can run a keep-alive mechanism for a connection between PubSub server and client.
 type KeepAlive struct {
-	conn        Conn
+	writer      Writer
+	client      string
 	reset       chan bool
 	stop        chan bool
 	close       chan bool
@@ -183,7 +187,7 @@ type KeepAlive struct {
 
 // NewKeepAlive from configuration
 func NewKeepAlive(cfg KeepAliveConfig) (*KeepAlive, error) {
-	if cfg.Conn == nil || cfg.ResetCh == nil || cfg.StopCh == nil || cfg.CloseCh == nil {
+	if cfg.Writer == nil || len(cfg.Client) == 0 || cfg.ResetCh == nil || cfg.StopCh == nil || cfg.CloseCh == nil {
 		return nil, errors.New("required configuration not set")
 	}
 
@@ -192,7 +196,8 @@ func NewKeepAlive(cfg KeepAliveConfig) (*KeepAlive, error) {
 	}
 
 	return &KeepAlive{
-		conn:        cfg.Conn,
+		writer:      cfg.Writer,
+		client:      cfg.Client,
 		reset:       cfg.ResetCh,
 		stop:        cfg.StopCh,
 		close:       cfg.CloseCh,
@@ -209,24 +214,24 @@ active:
 	for {
 		select {
 		case <-k.reset:
-			logger.Debug("keep alive reset", "client", k.conn.RemoteAddr().String())
+			logger.Debug("keep alive reset", "client", k.client)
 			checkTimeout.Reset(k.idleTimeout)
 			count = 0
 
 		case <-k.stop:
-			logger.Debug("keep alive stop", "client", k.conn.RemoteAddr().String())
+			logger.Debug("keep alive stop", "client", k.client)
 			break active
 
 		case <-checkTimeout.C:
 			count++
-			logger.Debug("keep alive check", "client", k.conn.RemoteAddr().String(), "count", count)
+			logger.Debug("keep alive check", "client", k.client, "count", count)
 			if count > 2 {
 				k.close <- true
 				break active
 			}
 
-			logger.Debug("keep alive PING", "client", k.conn.RemoteAddr().String())
-			_, err := k.conn.Write(BuildBytes(OpPing, CRLF))
+			logger.Debug("keep alive PING", "client", k.client)
+			_, err := k.writer.Write(BuildBytes(OpPing, CRLF))
 			if err != nil {
 				logger.Error("net.Conn Write", "error", err)
 				if strings.Contains(err.Error(), "broken pipe") {

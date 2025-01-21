@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"net"
 	"reflect"
 	"sync"
 	"testing"
@@ -15,12 +14,12 @@ import (
 )
 
 func TestNewConnectionReader(t *testing.T) {
-	expectedConn := NewMockConn(t)
+	mockedReader := NewMockReader(t)
 	expectedBufferSize := 10
 	expectedData := make(chan []byte)
 
 	type args struct {
-		conn       Conn
+		reader     Reader
 		bufferSize int
 		DataChan   chan []byte
 	}
@@ -33,12 +32,12 @@ func TestNewConnectionReader(t *testing.T) {
 		{
 			name: "Create",
 			args: args{
-				conn:       expectedConn,
+				reader:     mockedReader,
 				bufferSize: expectedBufferSize,
 				DataChan:   expectedData,
 			},
 			want: &ConnectionReader{
-				conn:   expectedConn,
+				reader: mockedReader,
 				buffer: make([]byte, expectedBufferSize),
 				dataCh: expectedData,
 			},
@@ -47,11 +46,11 @@ func TestNewConnectionReader(t *testing.T) {
 		{
 			name: "Create with default buffer size",
 			args: args{
-				conn:     expectedConn,
+				reader:   mockedReader,
 				DataChan: expectedData,
 			},
 			want: &ConnectionReader{
-				conn:   expectedConn,
+				reader: mockedReader,
 				buffer: make([]byte, 1024),
 				dataCh: expectedData,
 			},
@@ -69,7 +68,7 @@ func TestNewConnectionReader(t *testing.T) {
 		{
 			name: "Try to create without data channel",
 			args: args{
-				conn:       expectedConn,
+				reader:     mockedReader,
 				bufferSize: 10,
 			},
 			want:    nil,
@@ -79,7 +78,7 @@ func TestNewConnectionReader(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := NewConnectionReader(ConnectionReaderConfig{
-				Conn:       tt.args.conn,
+				Reader:     tt.args.reader,
 				BufferSize: tt.args.bufferSize,
 				DataChan:   tt.args.DataChan,
 			})
@@ -99,7 +98,7 @@ func TestConnectionReader_Read(t *testing.T) {
 	mockedDataCh := make(chan []byte)
 
 	type fields struct {
-		conn   func(m *MockConn)
+		reader func(m *MockReader)
 		buffer []byte
 		dataCh chan []byte
 	}
@@ -111,7 +110,7 @@ func TestConnectionReader_Read(t *testing.T) {
 		{
 			name: "Read",
 			fields: fields{
-				conn: func(m *MockConn) {
+				reader: func(m *MockReader) {
 					m.On("Read", mock.MatchedBy(func(buf []byte) bool {
 						if !bytes.Equal(buf, mockedBuffer) {
 							return false
@@ -119,7 +118,7 @@ func TestConnectionReader_Read(t *testing.T) {
 						buf[0], buf[1], buf[2], buf[3], buf[4], buf[5] = 'P', 'I', 'N', 'G', '\r', '\n'
 						return true
 					})).Return(6, nil).Once()
-					m.On("Read", mock.Anything).Return(0, errors.New(ClosedErr)).Once()
+					m.On("Read", mock.Anything).Return(0, errors.New(ClosedErr))
 				},
 				buffer: mockedBuffer,
 				dataCh: mockedDataCh,
@@ -129,7 +128,7 @@ func TestConnectionReader_Read(t *testing.T) {
 		{
 			name: "Multiple reads",
 			fields: fields{
-				conn: func(m *MockConn) {
+				reader: func(m *MockReader) {
 					m.On("Read", mock.MatchedBy(func(buf []byte) bool {
 						if !bytes.Equal(buf, mockedBuffer) {
 							return false
@@ -144,7 +143,7 @@ func TestConnectionReader_Read(t *testing.T) {
 						buf[0], buf[1] = '\r', '\n'
 						return true
 					})).Return(4, nil).Once()
-					m.On("Read", mock.Anything).Return(0, errors.New(ClosedErr)).Once()
+					m.On("Read", mock.Anything).Return(0, errors.New(ClosedErr))
 				},
 				buffer: mockedBuffer,
 				dataCh: mockedDataCh,
@@ -154,7 +153,7 @@ func TestConnectionReader_Read(t *testing.T) {
 		{
 			name: "Read error",
 			fields: fields{
-				conn: func(m *MockConn) {
+				reader: func(m *MockReader) {
 					m.On("Read", mock.Anything).Return(0, errors.New("error")).Once()
 				},
 				buffer: mockedBuffer,
@@ -165,13 +164,13 @@ func TestConnectionReader_Read(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockConn := NewMockConn(t)
-			if tt.fields.conn != nil {
-				tt.fields.conn(mockConn)
+			mockReader := NewMockReader(t)
+			if tt.fields.reader != nil {
+				tt.fields.reader(mockReader)
 			}
 
 			cr := &ConnectionReader{
-				conn:   mockConn,
+				reader: mockReader,
 				buffer: tt.fields.buffer,
 				dataCh: tt.fields.dataCh,
 			}
@@ -204,7 +203,8 @@ func TestConnectionReader_Read(t *testing.T) {
 
 func TestNewKeepAlive(t *testing.T) {
 
-	expectedConn := NewMockConn(t)
+	expectedWriter := NewMockWriter(t)
+	expectedClient := "client"
 	expectedResetCh := make(chan bool)
 	expectedStopCh := make(chan bool)
 	expectedCloseCh := make(chan bool)
@@ -223,7 +223,8 @@ func TestNewKeepAlive(t *testing.T) {
 			name: "Create",
 			args: args{
 				cfg: KeepAliveConfig{
-					Conn:        expectedConn,
+					Writer:      expectedWriter,
+					Client:      expectedClient,
 					ResetCh:     expectedResetCh,
 					StopCh:      expectedStopCh,
 					CloseCh:     expectedCloseCh,
@@ -231,7 +232,8 @@ func TestNewKeepAlive(t *testing.T) {
 				},
 			},
 			want: &KeepAlive{
-				conn:        expectedConn,
+				writer:      expectedWriter,
+				client:      expectedClient,
 				reset:       expectedResetCh,
 				stop:        expectedStopCh,
 				close:       expectedCloseCh,
@@ -243,14 +245,16 @@ func TestNewKeepAlive(t *testing.T) {
 			name: "Create with default timeout",
 			args: args{
 				cfg: KeepAliveConfig{
-					Conn:    expectedConn,
+					Writer:  expectedWriter,
+					Client:  expectedClient,
 					ResetCh: expectedResetCh,
 					StopCh:  expectedStopCh,
 					CloseCh: expectedCloseCh,
 				},
 			},
 			want: &KeepAlive{
-				conn:        expectedConn,
+				writer:      expectedWriter,
+				client:      expectedClient,
 				reset:       expectedResetCh,
 				stop:        expectedStopCh,
 				close:       expectedCloseCh,
@@ -263,6 +267,7 @@ func TestNewKeepAlive(t *testing.T) {
 			args: args{
 				cfg: KeepAliveConfig{
 					ResetCh:     expectedResetCh,
+					Client:      expectedClient,
 					StopCh:      expectedStopCh,
 					CloseCh:     expectedCloseCh,
 					IdleTimeout: expectedIdleTimeout,
@@ -275,7 +280,8 @@ func TestNewKeepAlive(t *testing.T) {
 			name: "Try to create without reset channel",
 			args: args{
 				cfg: KeepAliveConfig{
-					Conn:        expectedConn,
+					Writer:      expectedWriter,
+					Client:      expectedClient,
 					StopCh:      expectedStopCh,
 					CloseCh:     expectedCloseCh,
 					IdleTimeout: expectedIdleTimeout,
@@ -288,7 +294,8 @@ func TestNewKeepAlive(t *testing.T) {
 			name: "Try to create without stop channel",
 			args: args{
 				cfg: KeepAliveConfig{
-					Conn:        expectedConn,
+					Writer:      expectedWriter,
+					Client:      expectedClient,
 					ResetCh:     expectedResetCh,
 					CloseCh:     expectedCloseCh,
 					IdleTimeout: expectedIdleTimeout,
@@ -301,9 +308,24 @@ func TestNewKeepAlive(t *testing.T) {
 			name: "Try to create without close channel",
 			args: args{
 				cfg: KeepAliveConfig{
-					Conn:        expectedConn,
+					Writer:      expectedWriter,
+					Client:      expectedClient,
 					ResetCh:     expectedResetCh,
 					StopCh:      expectedStopCh,
+					IdleTimeout: expectedIdleTimeout,
+				},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "Try to create without client",
+			args: args{
+				cfg: KeepAliveConfig{
+					Writer:      expectedWriter,
+					ResetCh:     expectedResetCh,
+					StopCh:      expectedStopCh,
+					CloseCh:     expectedCloseCh,
 					IdleTimeout: expectedIdleTimeout,
 				},
 			},
@@ -332,11 +354,6 @@ func TestKeepAlive_Run(t *testing.T) {
 	closeCh := make(chan bool)
 	idleTimeout := 100 * time.Millisecond
 
-	mockedAddr := &net.TCPAddr{
-		IP:   net.IPv4(127, 0, 0, 1),
-		Port: 1234,
-	}
-
 	type fields struct {
 		reset       chan bool
 		stop        chan bool
@@ -344,10 +361,10 @@ func TestKeepAlive_Run(t *testing.T) {
 		idleTimeout time.Duration
 	}
 	tests := []struct {
-		name     string
-		fields   fields
-		mockConn func(m *MockConn)
-		mockOps  func(resetCh, stopCh, closeCh chan bool)
+		name       string
+		fields     fields
+		mockWriter func(m *MockWriter)
+		mockOps    func(resetCh, stopCh, closeCh chan bool)
 	}{
 		{
 			name: "Reset and stop",
@@ -356,9 +373,6 @@ func TestKeepAlive_Run(t *testing.T) {
 				stop:        stopCh,
 				close:       closeCh,
 				idleTimeout: idleTimeout,
-			},
-			mockConn: func(m *MockConn) {
-				m.On("RemoteAddr").Return(mockedAddr).Twice()
 			},
 			mockOps: func(resetCh, stopCh, closeCh chan bool) {
 				resetCh <- true
@@ -373,8 +387,7 @@ func TestKeepAlive_Run(t *testing.T) {
 				close:       closeCh,
 				idleTimeout: 10 * time.Millisecond,
 			},
-			mockConn: func(m *MockConn) {
-				m.On("RemoteAddr").Return(mockedAddr).Times(3)
+			mockWriter: func(m *MockWriter) {
 				m.On("Write", mock.Anything).Return(0, nil)
 			},
 			mockOps: func(resetCh, stopCh, closeCh chan bool) {
@@ -390,8 +403,7 @@ func TestKeepAlive_Run(t *testing.T) {
 				close:       closeCh,
 				idleTimeout: time.Millisecond,
 			},
-			mockConn: func(m *MockConn) {
-				m.On("RemoteAddr").Return(mockedAddr).Times(5)
+			mockWriter: func(m *MockWriter) {
 				m.On("Write", mock.Anything).Return(0, nil).Twice()
 			},
 			mockOps: func(resetCh, stopCh, closeCh chan bool) {
@@ -406,8 +418,7 @@ func TestKeepAlive_Run(t *testing.T) {
 				close:       closeCh,
 				idleTimeout: idleTimeout,
 			},
-			mockConn: func(m *MockConn) {
-				m.On("RemoteAddr").Return(mockedAddr).Twice()
+			mockWriter: func(m *MockWriter) {
 				m.On("Write", mock.Anything).Return(0, errors.New("broken pipe"))
 			},
 			mockOps: func(resetCh, stopCh, closeCh chan bool) {
@@ -416,15 +427,15 @@ func TestKeepAlive_Run(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		mockedConn := NewMockConn(t)
+		mockedWriter := NewMockWriter(t)
 
-		if tt.mockConn != nil {
-			tt.mockConn(mockedConn)
+		if tt.mockWriter != nil {
+			tt.mockWriter(mockedWriter)
 		}
 
 		t.Run(tt.name, func(t *testing.T) {
 			k := &KeepAlive{
-				conn:        mockedConn,
+				writer:      mockedWriter,
 				reset:       tt.fields.reset,
 				stop:        tt.fields.stop,
 				close:       tt.fields.close,
