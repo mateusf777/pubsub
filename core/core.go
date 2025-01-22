@@ -167,27 +167,27 @@ func (cr *ConnectionReader) Read() {
 
 // KeepAliveConfig configuration for the keep-alive mechanism
 type KeepAliveConfig struct {
-	Writer      Writer
-	Client      string
-	ResetCh     chan bool
-	StopCh      chan bool
-	CloseCh     chan bool
-	IdleTimeout time.Duration
+	Writer          Writer
+	Client          string
+	ResetInactivity chan bool
+	StopKeepAlive   chan bool
+	CloseHandler    chan bool
+	IdleTimeout     time.Duration
 }
 
 // KeepAlive can run a keep-alive mechanism for a connection between PubSub server and client.
 type KeepAlive struct {
-	writer      Writer
-	client      string
-	reset       chan bool
-	stop        chan bool
-	close       chan bool
-	idleTimeout time.Duration
+	writer          Writer
+	client          string
+	resetInactivity chan bool
+	stopKeepAlive   chan bool
+	closeHandler    chan bool
+	idleTimeout     time.Duration
 }
 
 // NewKeepAlive from configuration
 func NewKeepAlive(cfg KeepAliveConfig) (*KeepAlive, error) {
-	if cfg.Writer == nil || len(cfg.Client) == 0 || cfg.ResetCh == nil || cfg.StopCh == nil || cfg.CloseCh == nil {
+	if cfg.Writer == nil || len(cfg.Client) == 0 || cfg.ResetInactivity == nil || cfg.StopKeepAlive == nil || cfg.CloseHandler == nil {
 		return nil, errors.New("required configuration not set")
 	}
 
@@ -196,12 +196,12 @@ func NewKeepAlive(cfg KeepAliveConfig) (*KeepAlive, error) {
 	}
 
 	return &KeepAlive{
-		writer:      cfg.Writer,
-		client:      cfg.Client,
-		reset:       cfg.ResetCh,
-		stop:        cfg.StopCh,
-		close:       cfg.CloseCh,
-		idleTimeout: cfg.IdleTimeout,
+		writer:          cfg.Writer,
+		client:          cfg.Client,
+		resetInactivity: cfg.ResetInactivity,
+		stopKeepAlive:   cfg.StopKeepAlive,
+		closeHandler:    cfg.CloseHandler,
+		idleTimeout:     cfg.IdleTimeout,
 	}, nil
 }
 
@@ -213,12 +213,12 @@ func (k *KeepAlive) Run() {
 active:
 	for {
 		select {
-		case <-k.reset:
+		case <-k.resetInactivity:
 			logger.Debug("keep alive reset", "client", k.client)
 			checkTimeout.Reset(k.idleTimeout)
 			count = 0
 
-		case <-k.stop:
+		case <-k.stopKeepAlive:
 			logger.Debug("keep alive stop", "client", k.client)
 			break active
 
@@ -226,7 +226,7 @@ active:
 			count++
 			logger.Debug("keep alive check", "client", k.client, "count", count)
 			if count > 2 {
-				k.close <- true
+				k.closeHandler <- true
 				break active
 			}
 
@@ -235,7 +235,7 @@ active:
 			if err != nil {
 				logger.Error("net.Conn Write", "error", err)
 				if strings.Contains(err.Error(), "broken pipe") {
-					k.close <- true
+					k.closeHandler <- true
 					return
 				}
 			}

@@ -11,154 +11,232 @@ import (
 	"github.com/mateusf777/pubsub/core"
 )
 
-func handleConnection(c net.Conn, ps *PubSub) {
-	defer func(c net.Conn) {
+// ClientConn wraps network client connection.
+type ClientConn interface {
+	net.Conn
+}
+
+// PubSubConn provides an API to the PubSub engine.
+type PubSubConn interface {
+	// Stop closes the message channel, stopping the engine.
+	Stop()
+	// Publish message to subject handlers.
+	Publish(subject string, data []byte, opts ...PubOpt)
+	// Subscribe a client handler to a subject.
+	Subscribe(subject string, client string, handler Handler, opts ...SubOpt) error
+	// Unsubscribe a client handler from a subject.
+	Unsubscribe(subject string, client string, id int) error
+	// UnsubAll client handlers.
+	UnsubAll(client string)
+	// run the engine.
+	run()
+	// hasSubscriber verifies the existence of at least one subscriber to a subject.
+	hasSubscriber(subject string) bool
+}
+
+// ConnReader decouples core.ConnectionReader from ConnectionHandler.
+type ConnReader interface {
+	Read()
+}
+
+// DataProcessor decouples dataProcessor from ConnectionHandler.
+type DataProcessor interface {
+	Process()
+}
+
+// KeepAlive decouples core.KeepAlive from ConnectionHandler.
+type KeepAlive interface {
+	Run()
+}
+
+type ConnectionHandler struct {
+	conn            ClientConn
+	ps              PubSubConn
+	cr              ConnReader
+	dataProcessor   DataProcessor
+	keepalive       KeepAlive
+	data            chan []byte
+	resetInactivity chan bool
+	stopKeepAlive   chan bool
+	closeHandler    chan bool
+}
+
+func NewConnectionHandler(conn ClientConn, ps PubSubConn) (*ConnectionHandler, error) {
+	// Creates channels necessary for communication between the components running concurrently.
+	dataCh := make(chan []byte)
+	resetCh := make(chan bool)
+	closeCh := make(chan bool)
+	stopCh := make(chan bool)
+
+	cr, err := core.NewConnectionReader(core.ConnectionReaderConfig{
+		Reader:   conn,
+		DataChan: dataCh,
+	})
+	if err != nil {
+		slog.Error("NewConnectionHandler", "error", err)
+		return nil, err
+	}
+
+	ka, err := core.NewKeepAlive(core.KeepAliveConfig{
+		Writer:          conn,
+		Client:          conn.RemoteAddr().String(),
+		CloseHandler:    closeCh,
+		ResetInactivity: resetCh,
+		StopKeepAlive:   stopCh,
+	})
+	if err != nil {
+		slog.Error("NewConnectionHandler", "error", err)
+		return nil, err
+	}
+
+	return &ConnectionHandler{
+		conn: conn,
+		ps:   ps,
+		cr:   cr,
+		dataProcessor: &dataProcessor{
+			conn:            conn,
+			ps:              ps,
+			data:            dataCh,
+			resetInactivity: resetCh,
+			stopKeepAlive:   stopCh,
+			closeHandler:    closeCh,
+		},
+		keepalive:       ka,
+		data:            dataCh,
+		resetInactivity: resetCh,
+		stopKeepAlive:   stopCh,
+		closeHandler:    closeCh,
+	}, nil
+}
+
+func (h *ConnectionHandler) Handle() {
+	defer func(c ClientConn) {
 		err := c.Close()
 		if err != nil {
 			slog.Error("Server.handleConnection", "error", err)
 		}
 		slog.Info("Closed connection", "remote", c.RemoteAddr().String())
-	}(c)
+	}(h.conn)
 
-	closeHandler := make(chan bool)
-	inactivityReset := make(chan bool)
-	stopInactivityMonitor := make(chan bool)
+	go h.cr.Read()
+	go h.dataProcessor.Process()
+	go h.keepalive.Run()
 
-	slog.Info("Serving", "remote", c.RemoteAddr().String())
-	client := c.RemoteAddr().String()
+	<-h.closeHandler
+	h.ps.UnsubAll(h.conn.RemoteAddr().String())
+}
 
-	dataCh := make(chan []byte, 100)
+type dataProcessor struct {
+	conn            ClientConn
+	ps              PubSubConn
+	data            chan []byte
+	resetInactivity chan bool
+	stopKeepAlive   chan bool
+	closeHandler    chan bool
+}
 
-	connReader, err := core.NewConnectionReader(core.ConnectionReaderConfig{
-		Conn:     c,
-		DataChan: dataCh,
-	})
-	if err != nil {
-		slog.Error("Server.handleConnection", "error", err)
-	}
+// Process waits for data, verifies command and dispatches it to the appropriated handler, and writes the response to the connection.
+func (d *dataProcessor) Process() {
+	client := d.conn.RemoteAddr().String()
 
-	go func() {
-		go connReader.Read()
+	for netData := range d.data {
+		// If receive data from client, reset keep-alive
+		d.resetInactivity <- true
 
-		// dispatch
-		for netData := range dataCh {
-			inactivityReset <- true
+		data := bytes.TrimSpace(netData)
 
-			data := bytes.TrimSpace(netData)
+		var result []byte
+		switch {
+		// STOP
+		case bytes.Equal(bytes.ToUpper(data), core.OpStop), bytes.Equal(data, core.ControlC):
+			slog.Info("Closing connection", "remote", client)
+			// If client send STOP we close resources
+			d.stopKeepAlive <- true
+			d.closeHandler <- true
+			break
 
-			var result []byte
-			switch {
-			case bytes.Equal(bytes.ToUpper(data), core.OpStop), bytes.Equal(data, core.ControlC):
-				slog.Info("Closing connection", "remote", c.RemoteAddr().String())
-				stopInactivityMonitor <- true
-				closeHandler <- true
-				break
+		// PING
+		case bytes.Equal(bytes.ToUpper(data), core.OpPing):
+			result = core.BuildBytes(core.OpPong, core.CRLF)
 
-			case bytes.Equal(bytes.ToUpper(data), core.OpPing):
-				result = core.BuildBytes(core.OpPong, core.CRLF)
-				break
+		// PONG
+		case bytes.Equal(bytes.ToUpper(data), core.OpPong):
+			result = core.OK
 
-			case bytes.Equal(bytes.ToUpper(data), core.OpPong):
-				result = core.OK
-				break
+		// PUB
+		case bytes.HasPrefix(bytes.ToUpper(data), core.OpPub):
+			result = handlePub(d.ps, data, d.data)
 
-			case bytes.HasPrefix(bytes.ToUpper(data), core.OpPub):
-				result = handlePub(c, ps, client, data, dataCh)
+		// SUB
+		case bytes.HasPrefix(bytes.ToUpper(data), core.OpSub):
+			slog.Debug("sub", "value", data)
+			result = handleSub(d.conn, d.ps, client, data)
 
-			case bytes.HasPrefix(bytes.ToUpper(data), core.OpSub):
-				slog.Debug("sub", "value", data)
-				result = handleSub(c, ps, client, data)
+		// UNSUB
+		case bytes.HasPrefix(bytes.ToUpper(data), core.OpUnsub):
+			result = handleUnsub(d.ps, client, data)
 
-			case bytes.HasPrefix(bytes.ToUpper(data), core.OpUnsub):
-				result = handleUnsub(ps, client, data)
+		// NO DATA
+		case bytes.Equal(data, core.Empty):
+			continue
 
-			default:
-				if bytes.Equal(data, core.Empty) {
-					continue
-				}
-				result = core.BuildBytes([]byte("-ERR invalid protocol"), core.CRLF)
-			}
-
-			_, err := c.Write(result)
-			if err != nil {
-				if strings.Contains(err.Error(), "broken pipe") || strings.Contains(err.Error(), "connection reset by peer") {
-					continue
-				}
-				slog.Error("server handler handleConnection", "error", err)
-			}
-
+		default:
+			// UNKNOWN
+			result = core.BuildBytes([]byte("-ERR invalid protocol"), core.CRLF)
 		}
-	}()
 
-	keepAlive, err := core.NewKeepAlive(core.KeepAliveConfig{
-		Conn:    c,
-		ResetCh: inactivityReset,
-		StopCh:  stopInactivityMonitor,
-		CloseCh: closeHandler,
-	})
-	if err != nil {
-		slog.Error("Server handler handleConnection", "error", err)
+		_, err := d.conn.Write(result)
+		if err != nil {
+			if strings.Contains(err.Error(), "broken pipe") || strings.Contains(err.Error(), "connection reset by peer") {
+				continue
+			}
+			slog.Error("server handler handleConnection", "error", err)
+		}
+
 	}
-
-	go keepAlive.Run()
-
-	<-closeHandler
-	ps.UnsubAll(client)
-	return
 }
 
 // handlePub Handles PUB message. See core.OpPub.
-func handlePub(c net.Conn, ps *PubSub, client string, received []byte, dataCh chan []byte) []byte {
-	// default result
+func handlePub(ps PubSubConn, received []byte, dataCh <-chan []byte) []byte {
+	// Default result
 	result := core.OK
 
 	// Get next line
 	msg := <-dataCh
 
-	// parse
+	// Parse
 	args := bytes.Split(received, core.Space)
-
 	if len(args) < 2 || len(args) > 3 {
-		return []byte("-ERR should be PUB <subject> [reply-to]\n")
+		return []byte("-ERR should be PUB <subject> [reply-to]   \n")
 	}
 
 	opts := make([]PubOpt, 0)
 
-	// subscribe for reply
+	// Optional Reply
 	if len(args) == 3 {
 		reply := args[2]
-		if err := ps.Subscribe(string(reply), client, func(msg Message) {
-			result = core.BuildBytes(core.OpMsg, core.Space, []byte(msg.Subject), core.Space, []byte(msg.Reply), core.CRLF, msg.Data, core.CRLF)
-			slog.Debug("pub", "value", result)
-			_, err := c.Write(result)
-			if err != nil {
-				slog.Error("server handler handlePub", "error", err)
-			}
-		}); err != nil {
-			return core.BuildBytes(core.OpERR, core.Space, []byte(err.Error()))
-		}
 		opts = append(opts, WithReply(string(reply)))
 	}
 
-	// dispatch
+	// Dispatch
 	ps.Publish(string(args[1]), msg, opts...)
 
 	return result
 }
 
 // handleUnsub Handles UNSUB. See core.OpUnsub.
-func handleUnsub(ps *PubSub, client string, received []byte) []byte {
-	// default result
+func handleUnsub(ps PubSubConn, client string, received []byte) []byte {
+	// Default result
 	result := core.OK
 
-	// parse
+	// Parse
 	args := bytes.Split(received, core.Space)
 	if len(args) != 3 {
 		return []byte("-ERR should be UNSUB <subject> <id>\n")
 	}
 	id, _ := strconv.Atoi(string(args[2]))
 
-	// dispatch
+	// Dispatch
 	err := ps.Unsubscribe(string(args[1]), client, id)
 	if err != nil {
 		return core.BuildBytes(core.OpERR, core.Space, []byte(err.Error()))
@@ -167,11 +245,11 @@ func handleUnsub(ps *PubSub, client string, received []byte) []byte {
 }
 
 // handleSub Handles SUB. See core.OpSub.
-func handleSub(c net.Conn, ps *PubSub, client string, received []byte) []byte {
-	// default result
+func handleSub(c ClientConn, ps PubSubConn, client string, received []byte) []byte {
+	// Default result
 	result := core.OK
 
-	// parse
+	// Parse
 	args := bytes.Split(received, core.Space)
 	if len(args) < 3 || len(args) > 4 {
 		return []byte("-ERR should be SUB <subject> <id> [group]\n")
@@ -180,13 +258,14 @@ func handleSub(c net.Conn, ps *PubSub, client string, received []byte) []byte {
 	id, _ := strconv.Atoi(string(args[2]))
 	opts := make([]SubOpt, 0)
 
+	// Optional group
 	if len(args) == 4 {
 		group := args[3]
 		opts = append(opts, WithGroup(string(group)))
 	}
 	opts = append(opts, WithID(id))
 
-	// dispatch
+	// Dispatch
 	err := ps.Subscribe(string(args[1]), client, func(msg Message) {
 		err := sendMsg(c, id, msg)
 		if err != nil {
@@ -201,7 +280,7 @@ func handleSub(c net.Conn, ps *PubSub, client string, received []byte) []byte {
 }
 
 // sendMsg sends MSG back to client. See core.OpMsg.
-func sendMsg(conn net.Conn, id int, msg Message) error {
+func sendMsg(conn ClientConn, id int, msg Message) error {
 
 	subID := strconv.AppendInt([]byte{}, int64(id), 10)
 	result := core.BuildBytes(core.OpMsg, core.Space, []byte(msg.Subject), core.Space, subID, core.Space, []byte(msg.Reply), core.CRLF, msg.Data, core.CRLF)

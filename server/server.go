@@ -19,7 +19,11 @@ func Run(address string) {
 		slog.Error("Server.Run", "error", err)
 		return
 	}
-	defer l.Close()
+	defer func() {
+		if err := l.Close(); err != nil {
+			slog.Error("Server.Run", "error", err)
+		}
+	}()
 
 	go acceptClients(l)
 
@@ -28,8 +32,9 @@ func Run(address string) {
 	slog.Info("Stopping PubSub")
 }
 
-// Starts a concurrent handler for each connection
+// acceptClients starts a concurrent handler for each connection
 func acceptClients(l net.Listener) {
+	// PubSub engine is unique per instance.
 	ps := NewPubSub(PubSubConfig{})
 	defer ps.Stop()
 
@@ -44,7 +49,13 @@ func acceptClients(l net.Listener) {
 			return
 		}
 
-		go handleConnection(c, ps)
+		ch, err := NewConnectionHandler(c, ps)
+		if err != nil {
+			slog.Error("Server.acceptClient", "error", err)
+			return
+		}
+
+		go ch.Handle()
 	}
 }
 
