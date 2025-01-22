@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log/slog"
+	"os"
 	"sync"
 
 	"github.com/mateusf777/pubsub/client"
@@ -11,6 +12,10 @@ import (
 )
 
 func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+	slog.SetLogLoggerLevel(slog.LevelDebug)
+
 	wg := &sync.WaitGroup{}
 	for i := 0; i < common.Routines; i++ {
 		wg.Add(1)
