@@ -140,6 +140,7 @@ type messageProcessor struct {
 func (m *messageProcessor) Process() {
 	client := m.conn.RemoteAddr().String()
 
+loop:
 	for netData := range m.data {
 		// If receive data from client, reset keep-alive
 		m.resetInactivity <- true
@@ -154,7 +155,7 @@ func (m *messageProcessor) Process() {
 			// If client send STOP we close resources
 			m.stopKeepAlive <- true
 			m.closeHandler <- true
-			break
+			break loop
 
 		// PING
 		case bytes.Equal(bytes.ToUpper(data), core.OpPing):
@@ -267,17 +268,21 @@ func handleSub(conn ClientConn, pubSub PubSubConn, client string, received []byt
 	opts = append(opts, WithID(subID))
 
 	// Dispatch
-	err := pubSub.Subscribe(string(args[1]), client, func(msg Message) {
-		err := sendMsg(conn, subID, msg)
-		if err != nil {
-			slog.Error("send", "error", err)
-		}
-	}, opts...)
+	err := pubSub.Subscribe(string(args[1]), client, subscriberHandler(conn, subID), opts...)
 	if err != nil {
 		return core.BuildBytes(core.OpERR, core.Space, []byte(err.Error()))
 	}
 
 	return result
+}
+
+func subscriberHandler(conn ClientConn, sid int) Handler {
+	return func(msg Message) {
+		err := sendMsg(conn, sid, msg)
+		if err != nil {
+			slog.Error("send", "error", err)
+		}
+	}
 }
 
 // sendMsg sends MSG back to client. See core.OpMsg.
