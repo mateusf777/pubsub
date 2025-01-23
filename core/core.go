@@ -209,8 +209,10 @@ func NewKeepAlive(cfg KeepAliveConfig) (*KeepAlive, error) {
 // After two pings without response, sends signal to close connection.
 func (k *KeepAlive) Run() {
 	checkTimeout := time.NewTicker(k.idleTimeout)
+	defer checkTimeout.Stop()
+
 	count := 0
-active:
+loop:
 	for {
 		select {
 		case <-k.resetInactivity:
@@ -220,14 +222,14 @@ active:
 
 		case <-k.stopKeepAlive:
 			logger.Debug("keep alive stop", "client", k.client)
-			break active
+			break loop
 
 		case <-checkTimeout.C:
 			count++
 			logger.Debug("keep alive check", "client", k.client, "count", count)
 			if count > 2 {
 				k.closeHandler <- true
-				break active
+				break loop
 			}
 
 			logger.Debug("keep alive PING", "client", k.client)

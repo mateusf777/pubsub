@@ -49,12 +49,13 @@ func acceptClients(l net.Listener) {
 			return
 		}
 
-		ch, err := NewConnectionHandler(c, ps)
+		cfg, err := buildConnHandlerConfig(c, ps)
 		if err != nil {
 			slog.Error("Server.acceptClient", "error", err)
 			return
 		}
 
+		ch := NewConnectionHandler(cfg)
 		go ch.Handle()
 	}
 }
@@ -64,4 +65,58 @@ func Wait() {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 	<-signals
+}
+
+func buildConnHandlerConfig(conn ClientConn, ps PubSubConn) (ConnectionHandlerConfig, error) {
+
+	// Creates channels necessary for communication between the components running concurrently.
+	dataCh := make(chan []byte)
+	resetCh := make(chan bool)
+	closeCh := make(chan bool)
+	stopCh := make(chan bool)
+
+	// Creates connection reader
+	cr, err := core.NewConnectionReader(core.ConnectionReaderConfig{
+		Reader:   conn,
+		DataChan: dataCh,
+	})
+	if err != nil {
+		slog.Error("NewConnectionHandler", "error", err)
+		return ConnectionHandlerConfig{}, err
+	}
+
+	// Creates the keep alive
+	ka, err := core.NewKeepAlive(core.KeepAliveConfig{
+		Writer:          conn,
+		Client:          conn.RemoteAddr().String(),
+		CloseHandler:    closeCh,
+		ResetInactivity: resetCh,
+		StopKeepAlive:   stopCh,
+	})
+	if err != nil {
+		slog.Error("NewConnectionHandler", "error", err)
+		return ConnectionHandlerConfig{}, err
+	}
+
+	// Creates the message processor
+	mp := &messageProcessor{
+		conn:            conn,
+		pubSub:          ps,
+		data:            dataCh,
+		resetInactivity: resetCh,
+		stopKeepAlive:   stopCh,
+		closeHandler:    closeCh,
+	}
+
+	return ConnectionHandlerConfig{
+		Conn:            conn,
+		PubSub:          ps,
+		ConnReader:      cr,
+		MsgProc:         mp,
+		KeepAlive:       ka,
+		Data:            dataCh,
+		ResetInactivity: resetCh,
+		StopKeepAlive:   stopCh,
+		CloseHandler:    closeCh,
+	}, nil
 }

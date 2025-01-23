@@ -49,6 +49,19 @@ type KeepAlive interface {
 	Run()
 }
 
+// ConnectionHandlerConfig it's used to create a ConnectionHandler.
+type ConnectionHandlerConfig struct {
+	Conn            ClientConn
+	PubSub          PubSubConn
+	ConnReader      ConnReader
+	MsgProc         MessageProcessor
+	KeepAlive       KeepAlive
+	Data            chan []byte
+	ResetInactivity chan bool
+	StopKeepAlive   chan bool
+	CloseHandler    chan bool
+}
+
 // ConnectionHandler handles an accepted client connection.
 type ConnectionHandler struct {
 	conn            ClientConn
@@ -63,69 +76,25 @@ type ConnectionHandler struct {
 }
 
 // NewConnectionHandler creates all the necessary channels and components used by the connection handler.
-func NewConnectionHandler(conn ClientConn, ps PubSubConn) (*ConnectionHandler, error) {
-	// Creates channels necessary for communication between the components running concurrently.
-	dataCh := make(chan []byte)
-	resetCh := make(chan bool)
-	closeCh := make(chan bool)
-	stopCh := make(chan bool)
-
-	// Creates connection reader
-	cr, err := core.NewConnectionReader(core.ConnectionReaderConfig{
-		Reader:   conn,
-		DataChan: dataCh,
-	})
-	if err != nil {
-		slog.Error("NewConnectionHandler", "error", err)
-		return nil, err
-	}
-
-	// Creates the keep alive
-	ka, err := core.NewKeepAlive(core.KeepAliveConfig{
-		Writer:          conn,
-		Client:          conn.RemoteAddr().String(),
-		CloseHandler:    closeCh,
-		ResetInactivity: resetCh,
-		StopKeepAlive:   stopCh,
-	})
-	if err != nil {
-		slog.Error("NewConnectionHandler", "error", err)
-		return nil, err
-	}
-
-	// Creates the message processor
-	mp := &messageProcessor{
-		conn:            conn,
-		pubSub:          ps,
-		data:            dataCh,
-		resetInactivity: resetCh,
-		stopKeepAlive:   stopCh,
-		closeHandler:    closeCh,
-	}
-
+func NewConnectionHandler(cfg ConnectionHandlerConfig) *ConnectionHandler {
 	// Binds everything in the ConnectionHandler
 	return &ConnectionHandler{
-		conn:            conn,
-		pubSub:          ps,
-		connReader:      cr,
-		msgProc:         mp,
-		keepAlive:       ka,
-		data:            dataCh,
-		resetInactivity: resetCh,
-		stopKeepAlive:   stopCh,
-		closeHandler:    closeCh,
-	}, nil
+		conn:            cfg.Conn,
+		pubSub:          cfg.PubSub,
+		connReader:      cfg.ConnReader,
+		msgProc:         cfg.MsgProc,
+		keepAlive:       cfg.KeepAlive,
+		data:            cfg.Data,
+		resetInactivity: cfg.ResetInactivity,
+		stopKeepAlive:   cfg.StopKeepAlive,
+		closeHandler:    cfg.CloseHandler,
+	}
 }
 
 // Handle the client connection
 func (h *ConnectionHandler) Handle() {
-	defer func(c ClientConn) {
-		err := c.Close()
-		if err != nil {
-			slog.Error("Server.handleConnection", "error", err)
-		}
-		slog.Info("Closed connection", "remote", c.RemoteAddr().String())
-	}(h.conn)
+	// Cleanup resources
+	defer h.Close()
 
 	// Reads messages from the connection
 	go h.connReader.Read()
@@ -134,8 +103,28 @@ func (h *ConnectionHandler) Handle() {
 	// Runs process that verifies connection activity
 	go h.keepAlive.Run()
 
+	// Waits for a signal to close the connection handler
 	<-h.closeHandler
+}
+
+// Close cleanup ConnectionHandler resources
+func (h *ConnectionHandler) Close() {
+	// Removes all client subscribers from pubSub engine.
 	h.pubSub.UnsubAll(h.conn.RemoteAddr().String())
+
+	// Close all channels
+	close(h.data)
+	close(h.stopKeepAlive)
+	close(h.resetInactivity)
+	close(h.closeHandler)
+
+	// Close the connection with the client
+	err := h.conn.Close()
+	if err != nil {
+		slog.Error("Server.handleConnection", "error", err)
+	}
+
+	slog.Info("Closed connection", "remote", h.conn.RemoteAddr().String())
 }
 
 type messageProcessor struct {
@@ -148,12 +137,12 @@ type messageProcessor struct {
 }
 
 // Process waits for a client message, verifies and dispatches it to the appropriated handler, and writes the response to the connection.
-func (d *messageProcessor) Process() {
-	client := d.conn.RemoteAddr().String()
+func (m *messageProcessor) Process() {
+	client := m.conn.RemoteAddr().String()
 
-	for netData := range d.data {
+	for netData := range m.data {
 		// If receive data from client, reset keep-alive
-		d.resetInactivity <- true
+		m.resetInactivity <- true
 
 		data := bytes.TrimSpace(netData)
 
@@ -163,8 +152,8 @@ func (d *messageProcessor) Process() {
 		case bytes.Equal(bytes.ToUpper(data), core.OpStop), bytes.Equal(data, core.ControlC):
 			slog.Info("Closing connection", "remote", client)
 			// If client send STOP we close resources
-			d.stopKeepAlive <- true
-			d.closeHandler <- true
+			m.stopKeepAlive <- true
+			m.closeHandler <- true
 			break
 
 		// PING
@@ -177,16 +166,16 @@ func (d *messageProcessor) Process() {
 
 		// PUB
 		case bytes.HasPrefix(bytes.ToUpper(data), core.OpPub):
-			result = handlePub(d.pubSub, data, d.data)
+			result = handlePub(m.pubSub, data, m.data)
 
 		// SUB
 		case bytes.HasPrefix(bytes.ToUpper(data), core.OpSub):
 			slog.Debug("sub", "value", data)
-			result = handleSub(d.conn, d.pubSub, client, data)
+			result = handleSub(m.conn, m.pubSub, client, data)
 
 		// UNSUB
 		case bytes.HasPrefix(bytes.ToUpper(data), core.OpUnsub):
-			result = handleUnsub(d.pubSub, client, data)
+			result = handleUnsub(m.pubSub, client, data)
 
 		// NO DATA
 		case bytes.Equal(data, core.Empty):
@@ -197,7 +186,7 @@ func (d *messageProcessor) Process() {
 			result = core.BuildBytes([]byte("-ERR invalid protocol"), core.CRLF)
 		}
 
-		_, err := d.conn.Write(result)
+		_, err := m.conn.Write(result)
 		if err != nil {
 			if strings.Contains(err.Error(), "broken pipe") || strings.Contains(err.Error(), "connection reset by peer") {
 				continue
