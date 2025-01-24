@@ -67,6 +67,9 @@ func Wait() {
 	<-signals
 }
 
+// buildConnHandlerConfig contains the ConnectionHandler configuration
+// It puts together all the components:
+// core.ConnectionReader, MessageProcessor, KeepAlive and communication channels.
 func buildConnHandlerConfig(conn ClientConn, ps PubSubConn) (ConnectionHandlerConfig, error) {
 
 	// Creates channels necessary for communication between the components running concurrently.

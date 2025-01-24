@@ -15,78 +15,45 @@ func (c *Conn) handle(ctx context.Context) {
 		c.drained <- struct{}{}
 	}(c)
 
-	closeHandler := make(chan bool)
-	stopInactiveMonitor := make(chan bool)
-
-	inactiveReset := make(chan bool)
-
-	buffer := make([]byte, 1024)
 	dataCh := make(chan []byte, 10)
+	resetInactivity := make(chan bool)
+	stopKeepAlive := make(chan bool)
+	closeHandler := make(chan bool)
 
-	go func(ctx context.Context) {
+	connReader, err := core.NewConnectionReader(core.ConnectionReaderConfig{
+		Reader:   c.conn,
+		DataChan: dataCh,
+	})
+	if err != nil {
+		logger.Error("NewConnectionReader", "error", err)
+		return
+	}
+	go connReader.Read()
 
-		go core.Read(c.conn, buffer, dataCh)
+	msgProc := messageProcessor{
+		conn:            c,
+		data:            dataCh,
+		resetInactivity: resetInactivity,
+		stopKeepAlive:   stopKeepAlive,
+		closeHandler:    closeHandler,
+	}
+	go msgProc.Process(ctx)
 
-		for {
-			select {
-			case <-ctx.Done():
-				stopInactiveMonitor <- true
-				closeHandler <- true
-				logger.Info("done!")
-				return
-			case netData := <-dataCh:
-				logger.Debug("Received", "netData", netData)
-				inactiveReset <- true
+	keepAlive, err := core.NewKeepAlive(core.KeepAliveConfig{
+		Writer:          c.conn,
+		Client:          c.conn.RemoteAddr().String(),
+		ResetInactivity: resetInactivity,
+		StopKeepAlive:   stopKeepAlive,
+		CloseHandler:    closeHandler,
+	})
+	if err != nil {
+		logger.Error("NewKeepAlive", "error", err)
+		return
+	}
 
-				data := bytes.TrimSpace(netData)
-
-				var result []byte
-				switch {
-				case bytes.Equal(bytes.ToUpper(data), core.OpPing):
-					result = bytes.Join([][]byte{core.OpPong, core.CRLF}, nil)
-					break
-
-				case bytes.Equal(bytes.ToUpper(data), core.OpPong):
-					break
-
-				case bytes.Equal(bytes.ToUpper(data), core.OpOK):
-					break
-
-				case bytes.Equal(bytes.ToUpper(data), core.OpERR):
-					logger.Error("OpERR", "value", data)
-					break
-
-				case bytes.HasPrefix(bytes.ToUpper(data), core.OpMsg):
-					logger.Debug("in opMsg...")
-					logger.Debug("calling handleMsg")
-					c.routeMsg(data, dataCh)
-
-				default:
-					if bytes.Equal(data, core.Empty) {
-						continue
-					}
-					result = core.Empty
-				}
-
-				if !bytes.Equal(result, core.Empty) {
-					_, err := c.conn.Write(result)
-					if err != nil {
-						if strings.Contains(err.Error(), "broken pipe") {
-							continue
-						}
-						logger.Error("client handle", "error", err)
-					}
-				}
-
-			}
-		}
-	}(ctx)
-
-	go core.KeepAlive(c.conn, inactiveReset, stopInactiveMonitor, closeHandler)
+	go keepAlive.Run()
 
 	<-closeHandler
-
-	return
 }
 
 func (c *Conn) routeMsg(received []byte, dataCh chan []byte) {
@@ -118,5 +85,70 @@ func (c *Conn) routeMsg(received []byte, dataCh chan []byte) {
 	if err != nil {
 		logger.Error("route", "error", err)
 		return // fmt.Sprintf("-ERR %v\n", err)
+	}
+}
+
+type messageProcessor struct {
+	conn            *Conn
+	data            chan []byte
+	resetInactivity chan bool
+	stopKeepAlive   chan bool
+	closeHandler    chan bool
+}
+
+func (m *messageProcessor) Process(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			m.stopKeepAlive <- true
+			m.closeHandler <- true
+			logger.Info("done!")
+			return
+
+		case netData := <-m.data:
+			logger.Debug("Received", "netData", netData)
+			m.resetInactivity <- true
+
+			data := bytes.TrimSpace(netData)
+
+			var result []byte
+			switch {
+			case bytes.Equal(bytes.ToUpper(data), core.OpPing):
+				result = bytes.Join([][]byte{core.OpPong, core.CRLF}, nil)
+				break
+
+			case bytes.Equal(bytes.ToUpper(data), core.OpPong):
+				break
+
+			case bytes.Equal(bytes.ToUpper(data), core.OpOK):
+				break
+
+			case bytes.Equal(bytes.ToUpper(data), core.OpERR):
+				logger.Error("OpERR", "value", data)
+				break
+
+			case bytes.HasPrefix(bytes.ToUpper(data), core.OpMsg):
+				logger.Debug("in opMsg...")
+				logger.Debug("calling handleMsg")
+				m.conn.routeMsg(data, m.data)
+
+			default:
+				if bytes.Equal(data, core.Empty) {
+					continue
+				}
+				result = core.Empty
+			}
+
+			if !bytes.Equal(result, core.Empty) {
+				_, err := m.conn.conn.Write(result)
+				if err != nil {
+					if strings.Contains(err.Error(), "broken pipe") {
+						continue
+					}
+					logger.Error("client handle", "error", err)
+				}
+			}
+
+		}
 	}
 }
