@@ -14,6 +14,7 @@ import (
 // Run stars to listen in the given address
 // Ex: server.Run("localhost:9999")
 func Run(address string) {
+
 	l, err := net.Listen("tcp4", address)
 	if err != nil {
 		slog.Error("Server.Run", "error", err)
@@ -105,6 +106,7 @@ func buildConnHandlerConfig(conn ClientConn, ps PubSubConn) (ConnectionHandlerCo
 	mp := &messageProcessor{
 		conn:            conn,
 		pubSub:          ps,
+		client:          conn.RemoteAddr().String(),
 		data:            dataCh,
 		resetInactivity: resetCh,
 		stopKeepAlive:   stopCh,

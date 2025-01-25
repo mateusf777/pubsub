@@ -3,6 +3,7 @@ package client
 import (
 	"bytes"
 	"context"
+	"io"
 	"strconv"
 	"strings"
 
@@ -15,81 +16,19 @@ func (c *Conn) handle(ctx context.Context) {
 		c.drained <- struct{}{}
 	}(c)
 
-	dataCh := make(chan []byte, 10)
-	resetInactivity := make(chan bool)
-	stopKeepAlive := make(chan bool)
-	closeHandler := make(chan bool)
+	go c.connReader.Read()
 
-	connReader, err := core.NewConnectionReader(core.ConnectionReaderConfig{
-		Reader:   c.conn,
-		DataChan: dataCh,
-	})
-	if err != nil {
-		logger.Error("NewConnectionReader", "error", err)
-		return
-	}
-	go connReader.Read()
+	go c.msgProc.Process(ctx)
 
-	msgProc := messageProcessor{
-		conn:            c,
-		data:            dataCh,
-		resetInactivity: resetInactivity,
-		stopKeepAlive:   stopKeepAlive,
-		closeHandler:    closeHandler,
-	}
-	go msgProc.Process(ctx)
+	go c.keepAlive.Run()
 
-	keepAlive, err := core.NewKeepAlive(core.KeepAliveConfig{
-		Writer:          c.conn,
-		Client:          c.conn.RemoteAddr().String(),
-		ResetInactivity: resetInactivity,
-		StopKeepAlive:   stopKeepAlive,
-		CloseHandler:    closeHandler,
-	})
-	if err != nil {
-		logger.Error("NewKeepAlive", "error", err)
-		return
-	}
-
-	go keepAlive.Run()
-
-	<-closeHandler
-}
-
-func (c *Conn) routeMsg(received []byte, dataCh chan []byte) {
-	logger.Debug("routeMsg", "received", received)
-
-	args := bytes.Split(received, core.Space)
-	msg := <-dataCh
-
-	if len(args) < 3 || len(args) > 4 {
-		logger.Debug("routeMsg", "args", args)
-		return //"-ERR should be MSG <subject> <id> [reply-to] \n\r [payload] \n\r"
-	}
-
-	var reply []byte
-	if len(args) == 4 {
-		reply = args[3]
-	}
-
-	message := &Message{
-		conn:    c,
-		Subject: string(args[1]),
-		Reply:   string(reply),
-		Data:    msg,
-	}
-
-	id, _ := strconv.Atoi(string(args[2]))
-
-	err := c.router.route(message, id)
-	if err != nil {
-		logger.Error("route", "error", err)
-		return // fmt.Sprintf("-ERR %v\n", err)
-	}
+	<-c.closeHandler
 }
 
 type messageProcessor struct {
-	conn            *Conn
+	writer          io.Writer
+	router          router
+	client          *Client
 	data            chan []byte
 	resetInactivity chan bool
 	stopKeepAlive   chan bool
@@ -130,7 +69,7 @@ func (m *messageProcessor) Process(ctx context.Context) {
 			case bytes.HasPrefix(bytes.ToUpper(data), core.OpMsg):
 				logger.Debug("in opMsg...")
 				logger.Debug("calling handleMsg")
-				m.conn.routeMsg(data, m.data)
+				m.routeMsg(data, m.data)
 
 			default:
 				if bytes.Equal(data, core.Empty) {
@@ -140,7 +79,7 @@ func (m *messageProcessor) Process(ctx context.Context) {
 			}
 
 			if !bytes.Equal(result, core.Empty) {
-				_, err := m.conn.conn.Write(result)
+				_, err := m.writer.Write(result)
 				if err != nil {
 					if strings.Contains(err.Error(), "broken pipe") {
 						continue
@@ -150,5 +89,37 @@ func (m *messageProcessor) Process(ctx context.Context) {
 			}
 
 		}
+	}
+}
+
+func (m *messageProcessor) routeMsg(received []byte, dataCh chan []byte) {
+	logger.Debug("routeMsg", "received", received)
+
+	args := bytes.Split(received, core.Space)
+	msg := <-dataCh
+
+	if len(args) < 3 || len(args) > 4 {
+		logger.Debug("routeMsg", "args", args)
+		return //"-ERR should be MSG <subject> <id> [reply-to] \n\r [payload] \n\r"
+	}
+
+	var reply []byte
+	if len(args) == 4 {
+		reply = args[3]
+	}
+
+	message := &Message{
+		client:  m.client,
+		Subject: string(args[1]),
+		Reply:   string(reply),
+		Data:    msg,
+	}
+
+	id, _ := strconv.Atoi(string(args[2]))
+
+	err := m.router.route(message, id)
+	if err != nil {
+		logger.Error("route", "error", err)
+		return // fmt.Sprintf("-ERR %v\n", err)
 	}
 }

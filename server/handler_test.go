@@ -101,6 +101,7 @@ func TestConnectionHandler_Handle(t *testing.T) {
 				},
 				connReader: func(m *MockConnReader) {
 					m.On("Read").Return().Once()
+					m.On("Close").Return().Once()
 				},
 				msgProc: func(m *MockMessageProcessor) {
 					m.On("Process").Return().Once()
@@ -126,6 +127,7 @@ func TestConnectionHandler_Handle(t *testing.T) {
 				},
 				connReader: func(m *MockConnReader) {
 					m.On("Read").Return().Once()
+					m.On("Close").Return().Once()
 				},
 				msgProc: func(m *MockMessageProcessor) {
 					m.On("Process").Return().Once()
@@ -192,11 +194,10 @@ func TestConnectionHandler_Handle(t *testing.T) {
 }
 
 func Test_messageProcessor_Process(t *testing.T) {
-	expectedAddr := &net.IPAddr{IP: []byte{127, 0, 0, 1}}
-
 	type fields struct {
 		conn            func(m *MockClientConn)
 		pubSub          func(m *MockPubSubConn)
+		client          string
 		data            chan []byte
 		resetInactivity chan bool
 		stopKeepAlive   chan bool
@@ -212,8 +213,7 @@ func Test_messageProcessor_Process(t *testing.T) {
 			name: "Process PING",
 			fields: fields{
 				conn: func(m *MockClientConn) {
-					m.On("RemoteAddr").Return(expectedAddr).Once()
-					m.On("Write", core.BuildBytes(core.OpPong, core.CRLF)).Return(0, nil)
+					m.On("Write", core.BuildBytes(core.OpPong, core.CRLF)).Return(0, nil).Once()
 				},
 				data:            make(chan []byte),
 				resetInactivity: make(chan bool),
@@ -226,8 +226,7 @@ func Test_messageProcessor_Process(t *testing.T) {
 			name: "Process PONG",
 			fields: fields{
 				conn: func(m *MockClientConn) {
-					m.On("RemoteAddr").Return(expectedAddr).Once()
-					m.On("Write", core.OK).Return(0, nil)
+					m.On("Write", core.OK).Return(0, nil).Once()
 				},
 				data:            make(chan []byte),
 				resetInactivity: make(chan bool),
@@ -240,8 +239,7 @@ func Test_messageProcessor_Process(t *testing.T) {
 			name: "Process PUB",
 			fields: fields{
 				conn: func(m *MockClientConn) {
-					m.On("RemoteAddr").Return(expectedAddr).Once()
-					m.On("Write", core.OK).Return(0, nil)
+					m.On("Write", core.OK).Return(0, nil).Once()
 				},
 				pubSub: func(m *MockPubSubConn) {
 					m.On("Publish", "test", []byte("test\r\n")).Return().Once()
@@ -258,8 +256,7 @@ func Test_messageProcessor_Process(t *testing.T) {
 			name: "Process PUB with reply",
 			fields: fields{
 				conn: func(m *MockClientConn) {
-					m.On("RemoteAddr").Return(expectedAddr).Once()
-					m.On("Write", core.OK).Return(0, nil)
+					m.On("Write", core.OK).Return(0, nil).Once()
 				},
 				pubSub: func(m *MockPubSubConn) {
 					m.On("Publish", "test", []byte("test\r\n"), mock.MatchedBy(func(opt PubOpt) bool {
@@ -280,8 +277,7 @@ func Test_messageProcessor_Process(t *testing.T) {
 			name: "Process invalid PUB message",
 			fields: fields{
 				conn: func(m *MockClientConn) {
-					m.On("RemoteAddr").Return(expectedAddr).Once()
-					m.On("Write", []byte("-ERR should be PUB <subject> [reply-to]   \n")).Return(0, nil)
+					m.On("Write", []byte("-ERR should be PUB <subject> [reply-to]   \n")).Return(0, nil).Once()
 				},
 				data:            make(chan []byte),
 				resetInactivity: make(chan bool),
@@ -294,12 +290,12 @@ func Test_messageProcessor_Process(t *testing.T) {
 			name: "Process UNSUB",
 			fields: fields{
 				conn: func(m *MockClientConn) {
-					m.On("RemoteAddr").Return(expectedAddr).Once()
-					m.On("Write", core.OK).Return(0, nil)
+					m.On("Write", core.OK).Return(0, nil).Once()
 				},
 				pubSub: func(m *MockPubSubConn) {
 					m.On("Unsubscribe", "test", "127.0.0.1", 1).Return(nil).Once()
 				},
+				client:          "127.0.0.1",
 				data:            make(chan []byte),
 				resetInactivity: make(chan bool),
 				stopKeepAlive:   make(chan bool),
@@ -311,8 +307,7 @@ func Test_messageProcessor_Process(t *testing.T) {
 			name: "Process invalid UNSUB",
 			fields: fields{
 				conn: func(m *MockClientConn) {
-					m.On("RemoteAddr").Return(expectedAddr).Once()
-					m.On("Write", []byte("-ERR should be UNSUB <subject> <id>\n")).Return(0, nil)
+					m.On("Write", []byte("-ERR should be UNSUB <subject> <id>\n")).Return(0, nil).Once()
 				},
 				data:            make(chan []byte),
 				resetInactivity: make(chan bool),
@@ -325,12 +320,12 @@ func Test_messageProcessor_Process(t *testing.T) {
 			name: "Process UNSUB with error",
 			fields: fields{
 				conn: func(m *MockClientConn) {
-					m.On("RemoteAddr").Return(expectedAddr).Once()
-					m.On("Write", core.BuildBytes(core.OpERR, core.Space, []byte("error"))).Return(0, nil)
+					m.On("Write", core.BuildBytes(core.OpERR, core.Space, []byte("error"))).Return(0, nil).Once()
 				},
 				pubSub: func(m *MockPubSubConn) {
 					m.On("Unsubscribe", "test", "127.0.0.1", 1).Return(errors.New("error")).Once()
 				},
+				client:          "127.0.0.1",
 				data:            make(chan []byte),
 				resetInactivity: make(chan bool),
 				stopKeepAlive:   make(chan bool),
@@ -342,8 +337,7 @@ func Test_messageProcessor_Process(t *testing.T) {
 			name: "Process SUB",
 			fields: fields{
 				conn: func(m *MockClientConn) {
-					m.On("RemoteAddr").Return(expectedAddr).Once()
-					m.On("Write", core.OK).Return(0, nil)
+					m.On("Write", core.OK).Return(0, nil).Once()
 				},
 				pubSub: func(m *MockPubSubConn) {
 					m.On("Subscribe", "test", "127.0.0.1",
@@ -356,6 +350,7 @@ func Test_messageProcessor_Process(t *testing.T) {
 							return h.id == 1
 						})).Return(nil).Once()
 				},
+				client:          "127.0.0.1",
 				data:            make(chan []byte),
 				resetInactivity: make(chan bool),
 				stopKeepAlive:   make(chan bool),
@@ -367,8 +362,7 @@ func Test_messageProcessor_Process(t *testing.T) {
 			name: "Process SUB with group",
 			fields: fields{
 				conn: func(m *MockClientConn) {
-					m.On("RemoteAddr").Return(expectedAddr).Once()
-					m.On("Write", core.OK).Return(0, nil)
+					m.On("Write", core.OK).Return(0, nil).Once()
 				},
 				pubSub: func(m *MockPubSubConn) {
 					m.On("Subscribe", "test", "127.0.0.1",
@@ -387,6 +381,7 @@ func Test_messageProcessor_Process(t *testing.T) {
 						}),
 					).Return(nil).Once()
 				},
+				client:          "127.0.0.1",
 				data:            make(chan []byte),
 				resetInactivity: make(chan bool),
 				stopKeepAlive:   make(chan bool),
@@ -398,9 +393,9 @@ func Test_messageProcessor_Process(t *testing.T) {
 			name: "Process invalid SUB",
 			fields: fields{
 				conn: func(m *MockClientConn) {
-					m.On("RemoteAddr").Return(expectedAddr).Once()
-					m.On("Write", []byte("-ERR should be SUB <subject> <id> [group]\n")).Return(0, nil)
+					m.On("Write", []byte("-ERR should be SUB <subject> <id> [group]\n")).Return(0, nil).Once()
 				},
+				client:          "127.0.0.1",
 				data:            make(chan []byte),
 				resetInactivity: make(chan bool),
 				stopKeepAlive:   make(chan bool),
@@ -412,8 +407,7 @@ func Test_messageProcessor_Process(t *testing.T) {
 			name: "Process SUB with error",
 			fields: fields{
 				conn: func(m *MockClientConn) {
-					m.On("RemoteAddr").Return(expectedAddr).Once()
-					m.On("Write", core.BuildBytes(core.OpERR, core.Space, []byte("error"))).Return(0, nil)
+					m.On("Write", core.BuildBytes(core.OpERR, core.Space, []byte("error"))).Return(0, nil).Once()
 				},
 				pubSub: func(m *MockPubSubConn) {
 					m.On("Subscribe", "test", "127.0.0.1",
@@ -426,6 +420,7 @@ func Test_messageProcessor_Process(t *testing.T) {
 							return h.id == 1
 						})).Return(errors.New("error")).Once()
 				},
+				client:          "127.0.0.1",
 				data:            make(chan []byte),
 				resetInactivity: make(chan bool),
 				stopKeepAlive:   make(chan bool),
@@ -436,9 +431,6 @@ func Test_messageProcessor_Process(t *testing.T) {
 		{
 			name: "Process empty message",
 			fields: fields{
-				conn: func(m *MockClientConn) {
-					m.On("RemoteAddr").Return(expectedAddr).Once()
-				},
 				data:            make(chan []byte),
 				resetInactivity: make(chan bool),
 				stopKeepAlive:   make(chan bool),
@@ -450,8 +442,7 @@ func Test_messageProcessor_Process(t *testing.T) {
 			name: "Process UNKNOWN",
 			fields: fields{
 				conn: func(m *MockClientConn) {
-					m.On("RemoteAddr").Return(expectedAddr).Once()
-					m.On("Write", core.BuildBytes([]byte("-ERR invalid protocol"), core.CRLF)).Return(0, nil)
+					m.On("Write", core.BuildBytes([]byte("-ERR invalid protocol"), core.CRLF)).Return(0, nil).Once()
 				},
 				data:            make(chan []byte),
 				resetInactivity: make(chan bool),
@@ -464,8 +455,7 @@ func Test_messageProcessor_Process(t *testing.T) {
 			name: "Process message with write broken pipe error",
 			fields: fields{
 				conn: func(m *MockClientConn) {
-					m.On("RemoteAddr").Return(expectedAddr).Once()
-					m.On("Write", core.BuildBytes(core.OpPong, core.CRLF)).Return(0, errors.New("broken pipe"))
+					m.On("Write", core.BuildBytes(core.OpPong, core.CRLF)).Return(0, errors.New("broken pipe")).Once()
 				},
 				data:            make(chan []byte),
 				resetInactivity: make(chan bool),
@@ -478,8 +468,7 @@ func Test_messageProcessor_Process(t *testing.T) {
 			name: "Process message with write reset error",
 			fields: fields{
 				conn: func(m *MockClientConn) {
-					m.On("RemoteAddr").Return(expectedAddr).Once()
-					m.On("Write", core.BuildBytes(core.OpPong, core.CRLF)).Return(0, errors.New("connection reset by peer"))
+					m.On("Write", core.BuildBytes(core.OpPong, core.CRLF)).Return(0, errors.New("connection reset by peer")).Once()
 				},
 				data:            make(chan []byte),
 				resetInactivity: make(chan bool),
@@ -492,8 +481,7 @@ func Test_messageProcessor_Process(t *testing.T) {
 			name: "Process message with write error",
 			fields: fields{
 				conn: func(m *MockClientConn) {
-					m.On("RemoteAddr").Return(expectedAddr).Once()
-					m.On("Write", core.BuildBytes(core.OpPong, core.CRLF)).Return(0, errors.New("error"))
+					m.On("Write", core.BuildBytes(core.OpPong, core.CRLF)).Return(0, errors.New("error")).Once()
 				},
 				data:            make(chan []byte),
 				resetInactivity: make(chan bool),
@@ -505,9 +493,6 @@ func Test_messageProcessor_Process(t *testing.T) {
 		{
 			name: "Process STOP",
 			fields: fields{
-				conn: func(m *MockClientConn) {
-					m.On("RemoteAddr").Return(expectedAddr).Once()
-				},
 				data:            make(chan []byte),
 				resetInactivity: make(chan bool),
 				stopKeepAlive:   make(chan bool),
@@ -532,6 +517,7 @@ func Test_messageProcessor_Process(t *testing.T) {
 			m := &messageProcessor{
 				conn:            mockClientConn,
 				pubSub:          mockPubSub,
+				client:          tt.fields.client,
 				data:            tt.fields.data,
 				resetInactivity: tt.fields.resetInactivity,
 				stopKeepAlive:   tt.fields.stopKeepAlive,

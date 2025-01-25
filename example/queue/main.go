@@ -26,13 +26,15 @@ func main() {
 	}
 	defer conn.Close()
 
+	c := conn.GetClient()
+
 	slog.Info("Launching subscribers", "queue", queue)
 
 	mu := sync.Mutex{}
 	count := 0
 	for i := 0; i < queue; i++ {
 		n := i
-		_, err := conn.QueueSubscribe("echo", "queue", func(msg *client.Message) {
+		_, err := c.QueueSubscribe("echo", "queue", func(msg *client.Message) {
 			mu.Lock()
 			count++
 			mu.Unlock()
@@ -48,7 +50,7 @@ func main() {
 
 	slog.Info("Publishing messages...", "value", messages*queue)
 	for i := 0; i < messages*queue; i++ {
-		err = conn.Publish("echo", []byte("message to echo"))
+		err = c.Publish("echo", []byte("message to echo"))
 		if err != nil {
 			slog.Error("could not publish", "error", err)
 			continue

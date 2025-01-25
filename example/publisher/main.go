@@ -14,7 +14,6 @@ import (
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
-	slog.SetLogLoggerLevel(slog.LevelDebug)
 
 	wg := &sync.WaitGroup{}
 	for i := 0; i < common.Routines; i++ {
@@ -37,10 +36,12 @@ func send(wg *sync.WaitGroup) {
 		slog.Info("Connection closed")
 	}()
 
+	c := conn.GetClient()
+
 	slog.Info("start sending")
 	for i := 0; i < common.Messages; i++ {
 		msg := fmt.Sprintf("this is a longer test with count: %d", i)
-		err := conn.Publish("test", []byte(msg))
+		err := c.Publish("test", []byte(msg))
 		if err != nil {
 			slog.Error("send Publish", "error", err)
 			return

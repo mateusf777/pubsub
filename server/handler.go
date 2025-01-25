@@ -37,6 +37,7 @@ type PubSubConn interface {
 // ConnReader decouples core.ConnectionReader from ConnectionHandler.
 type ConnReader interface {
 	Read()
+	Close()
 }
 
 // MessageProcessor decouples messageProcessor from ConnectionHandler.
@@ -112,17 +113,20 @@ func (h *ConnectionHandler) Close() {
 	// Removes all client subscribers from pubSub engine.
 	h.pubSub.UnsubAll(h.conn.RemoteAddr().String())
 
-	// Close all channels
-	close(h.data)
-	close(h.stopKeepAlive)
-	close(h.resetInactivity)
-	close(h.closeHandler)
-
 	// Close the connection with the client
 	err := h.conn.Close()
 	if err != nil {
 		slog.Error("Server.handleConnection", "error", err)
 	}
+
+	// Close reader
+	h.connReader.Close()
+
+	// Close all channels
+	close(h.closeHandler)
+	close(h.stopKeepAlive)
+	close(h.resetInactivity)
+	close(h.data)
 
 	slog.Info("Closed connection", "remote", h.conn.RemoteAddr().String())
 }
@@ -130,6 +134,7 @@ func (h *ConnectionHandler) Close() {
 type messageProcessor struct {
 	conn            ClientConn
 	pubSub          PubSubConn
+	client          string
 	data            chan []byte
 	resetInactivity chan bool
 	stopKeepAlive   chan bool
@@ -138,7 +143,6 @@ type messageProcessor struct {
 
 // Process waits for a client message, verifies and dispatches it to the appropriated handler, and writes the response to the connection.
 func (m *messageProcessor) Process() {
-	client := m.conn.RemoteAddr().String()
 
 loop:
 	for netData := range m.data {
@@ -151,7 +155,7 @@ loop:
 		switch {
 		// STOP
 		case bytes.Equal(bytes.ToUpper(data), core.OpStop), bytes.Equal(data, core.ControlC):
-			slog.Info("Closing connection", "remote", client)
+			slog.Info("Closing connection", "remote", m.client)
 			// If client send STOP we close resources
 			m.stopKeepAlive <- true
 			m.closeHandler <- true
@@ -172,11 +176,11 @@ loop:
 		// SUB
 		case bytes.HasPrefix(bytes.ToUpper(data), core.OpSub):
 			slog.Debug("sub", "value", data)
-			result = handleSub(m.conn, m.pubSub, client, data)
+			result = handleSub(m.conn, m.pubSub, m.client, data)
 
 		// UNSUB
 		case bytes.HasPrefix(bytes.ToUpper(data), core.OpUnsub):
-			result = handleUnsub(m.pubSub, client, data)
+			result = handleUnsub(m.pubSub, m.client, data)
 
 		// NO DATA
 		case bytes.Equal(data, core.Empty):
@@ -196,6 +200,7 @@ loop:
 		}
 
 	}
+	slog.Debug("Message Processor Closed")
 }
 
 // handlePub Handles PUB message. See core.OpPub.

@@ -109,6 +109,7 @@ type ConnectionReader struct {
 	reader Reader
 	buffer []byte
 	dataCh chan []byte
+	close  chan bool
 }
 
 // NewConnectionReader creates a ConnectionReader from configuration.
@@ -126,6 +127,7 @@ func NewConnectionReader(cfg ConnectionReaderConfig) (*ConnectionReader, error) 
 		reader: cfg.Reader,
 		buffer: make([]byte, cfg.BufferSize),
 		dataCh: cfg.DataChan,
+		close:  make(chan bool),
 	}, nil
 }
 
@@ -137,10 +139,10 @@ func (cr *ConnectionReader) Read() {
 		if err != nil {
 			if strings.Contains(err.Error(), ClosedErr) {
 				logger.Debug("Connection closed")
-				return
+				break
 			}
 			logger.Debug("net.Conn Read", "error", err)
-			return
+			break
 		}
 
 		logger.Debug("Read", "data", string(cr.buffer[:n]))
@@ -158,11 +160,24 @@ func (cr *ConnectionReader) Read() {
 			messages = messages[:len(messages)-1]
 		}
 
+		logger.Debug("messages", "messages", messages)
 		for _, msg := range messages {
 			logger.Debug(string(msg))
-			cr.dataCh <- msg
+			select {
+			case <-cr.close:
+				logger.Debug("Closed before", "msg", string(msg))
+				return
+			default:
+				logger.Debug("dataCh <- msg!!!!!", "msg", string(msg))
+				cr.dataCh <- msg
+			}
 		}
 	}
+}
+
+func (cr *ConnectionReader) Close() {
+	cr.close <- true
+	close(cr.close)
 }
 
 // KeepAliveConfig configuration for the keep-alive mechanism
@@ -243,6 +258,7 @@ loop:
 			}
 		}
 	}
+	logger.Debug("Keep Alive Closed")
 }
 
 // BuildBytes helps create a slice of bytes from multiple slices of bytes.

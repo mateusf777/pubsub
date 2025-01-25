@@ -41,7 +41,7 @@ func (ps *msgRouter) removeSubHandler(subscriberID int) {
 
 // Message contains data and metadata about a message sent from a publisher to a subscriber
 type Message struct {
-	conn    *Conn
+	client  *Client
 	Subject string
 	Reply   string
 	Data    []byte
@@ -53,5 +53,5 @@ func (m *Message) Respond(data []byte) error {
 	if m.Reply == string(core.Empty) {
 		return nil
 	}
-	return m.conn.Publish(m.Reply, data)
+	return m.client.Publish(m.Reply, data)
 }

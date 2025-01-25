@@ -21,7 +21,7 @@ func TestNewConnectionReader(t *testing.T) {
 	type args struct {
 		reader     Reader
 		bufferSize int
-		DataChan   chan []byte
+		dataChan   chan []byte
 	}
 	tests := []struct {
 		name    string
@@ -34,7 +34,7 @@ func TestNewConnectionReader(t *testing.T) {
 			args: args{
 				reader:     mockedReader,
 				bufferSize: expectedBufferSize,
-				DataChan:   expectedData,
+				dataChan:   expectedData,
 			},
 			want: &ConnectionReader{
 				reader: mockedReader,
@@ -47,7 +47,7 @@ func TestNewConnectionReader(t *testing.T) {
 			name: "Create with default buffer size",
 			args: args{
 				reader:   mockedReader,
-				DataChan: expectedData,
+				dataChan: expectedData,
 			},
 			want: &ConnectionReader{
 				reader: mockedReader,
@@ -60,9 +60,8 @@ func TestNewConnectionReader(t *testing.T) {
 			name: "Try to create without Connection",
 			args: args{
 				bufferSize: 10,
-				DataChan:   expectedData,
+				dataChan:   expectedData,
 			},
-			want:    nil,
 			wantErr: true,
 		},
 		{
@@ -80,12 +79,17 @@ func TestNewConnectionReader(t *testing.T) {
 			got, err := NewConnectionReader(ConnectionReaderConfig{
 				Reader:     tt.args.reader,
 				BufferSize: tt.args.bufferSize,
-				DataChan:   tt.args.DataChan,
+				DataChan:   tt.args.dataChan,
 			})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewConnectionReader() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
+
+			if got != nil {
+				got.close = nil
+			}
+
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("NewConnectionReader() got = %v, want %v", got, tt.want)
 			}
@@ -442,7 +446,6 @@ func TestKeepAlive_Run(t *testing.T) {
 				idleTimeout:     tt.fields.idleTimeout,
 			}
 
-			SetLogLevel(slog.LevelDebug)
 			defer SetLogLevel(slog.LevelError)
 
 			wg := &sync.WaitGroup{}

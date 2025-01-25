@@ -1,6 +1,6 @@
 package common
 
 const (
-	Routines = 8
-	Messages = 1000000
+	Routines = 1
+	Messages = 100
 )

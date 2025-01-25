@@ -126,6 +126,8 @@ func (ps *PubSub) Subscribe(subject string, client string, handler Handler, opts
 		return fmt.Errorf("invalid parameters, subject, client and handler need to be given")
 	}
 
+	slog.Debug("Subscribing", "subject", subject, "client", client)
+
 	if _, ok := ps.handlersMap.Load(subject); !ok {
 		ps.handlersMap.Store(subject, make([]HandlerSubject, 0))
 	}

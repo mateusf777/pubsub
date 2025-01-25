@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"os"
@@ -22,11 +23,15 @@ type router interface {
 
 // Conn contains the state of the connection with the pubsub server to perform the necessary operations
 type Conn struct {
-	conn      net.Conn
-	router    router
-	cancel    context.CancelFunc
-	drained   chan struct{}
-	nextReply int
+	conn         net.Conn
+	router       router
+	connReader   *core.ConnectionReader
+	msgProc      *messageProcessor
+	keepAlive    *core.KeepAlive
+	client       *Client
+	closeHandler chan bool
+	cancel       context.CancelFunc
+	drained      chan struct{}
 }
 
 var logger *slog.Logger
@@ -48,13 +53,60 @@ func Connect(address string) (*Conn, error) {
 		return nil, err
 	}
 
+	dataCh := make(chan []byte, 10)
+	resetInactivity := make(chan bool)
+	stopKeepAlive := make(chan bool)
+	closeHandler := make(chan bool)
+
+	rt := newMsgRouter()
+
+	connReader, err := core.NewConnectionReader(core.ConnectionReaderConfig{
+		Reader:   conn,
+		DataChan: dataCh,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	client := &Client{
+		writer: conn,
+		router: rt,
+	}
+
+	msgProc := &messageProcessor{
+		writer:          conn,
+		router:          rt,
+		client:          client,
+		data:            dataCh,
+		resetInactivity: resetInactivity,
+		stopKeepAlive:   stopKeepAlive,
+		closeHandler:    closeHandler,
+	}
+
+	keepAlive, err := core.NewKeepAlive(core.KeepAliveConfig{
+		Writer:          conn,
+		Client:          conn.RemoteAddr().String(),
+		ResetInactivity: resetInactivity,
+		StopKeepAlive:   stopKeepAlive,
+		CloseHandler:    closeHandler,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &Conn{
-		conn:    conn,
-		router:  newMsgRouter(),
-		cancel:  cancel,
-		drained: make(chan struct{}),
+		conn:         conn,
+		router:       rt,
+		connReader:   connReader,
+		msgProc:      msgProc,
+		keepAlive:    keepAlive,
+		client:       client,
+		closeHandler: closeHandler,
+		cancel:       cancel,
+		drained:      make(chan struct{}),
 	}
+
 	go c.handle(ctx)
 
 	return c, nil
@@ -98,13 +150,23 @@ func (c *Conn) Drain() {
 	<-c.drained
 }
 
+func (c *Conn) GetClient() *Client {
+	return c.client
+}
+
+type Client struct {
+	writer    io.Writer
+	router    router
+	nextReply int
+}
+
 // Publish sends a message for a subject
 // Uses command PUB <subject> \n\r message \n\r
-func (c *Conn) Publish(subject string, msg []byte) error {
+func (c *Client) Publish(subject string, msg []byte) error {
 	result := bytes.Join([][]byte{core.OpPub, core.Space, []byte(subject), core.CRLF, msg, core.CRLF}, nil)
 	logger.Debug(string(result))
 
-	if _, err := c.conn.Write(result); err != nil {
+	if _, err := c.writer.Write(result); err != nil {
 		return fmt.Errorf("client Publish, %v", err)
 	}
 
@@ -113,7 +175,7 @@ func (c *Conn) Publish(subject string, msg []byte) error {
 
 // Subscribe registers a handler that listen for messages sent to a subjects
 // Uses SUB <subject> <sub.ID>
-func (c *Conn) Subscribe(subject string, handler Handler) (int, error) {
+func (c *Client) Subscribe(subject string, handler Handler) (int, error) {
 	subscriberID := c.router.addSubHandler(handler)
 
 	subIDBytes := strconv.AppendInt([]byte{}, int64(subscriberID), 10)
@@ -121,7 +183,7 @@ func (c *Conn) Subscribe(subject string, handler Handler) (int, error) {
 	result := bytes.Join([][]byte{core.OpSub, core.Space, []byte(subject), core.Space, subIDBytes, core.CRLF}, nil)
 	logger.Debug(string(result))
 
-	if _, err := c.conn.Write(result); err != nil {
+	if _, err := c.writer.Write(result); err != nil {
 		return -1, fmt.Errorf("client Subscribe, %v", err)
 	}
 
@@ -130,7 +192,7 @@ func (c *Conn) Subscribe(subject string, handler Handler) (int, error) {
 
 // Unsubscribe removes the handler from router and sends UNSUB to server
 // Uses UNSUB <sub.ID>
-func (c *Conn) Unsubscribe(subscriberID int) error {
+func (c *Client) Unsubscribe(subscriberID int) error {
 	c.router.removeSubHandler(subscriberID)
 
 	subIDBytes := strconv.AppendInt([]byte{}, int64(subscriberID), 10)
@@ -138,7 +200,7 @@ func (c *Conn) Unsubscribe(subscriberID int) error {
 	result := bytes.Join([][]byte{core.OpUnsub, core.Space, subIDBytes, core.CRLF}, nil)
 	logger.Debug(string(result))
 
-	if _, err := c.conn.Write(result); err != nil {
+	if _, err := c.writer.Write(result); err != nil {
 		return fmt.Errorf("client Unsubscribe, %v", err)
 	}
 
@@ -147,7 +209,7 @@ func (c *Conn) Unsubscribe(subscriberID int) error {
 
 // QueueSubscribe as subscribe, but the server will randomly load balance among the handlers in the queue
 // Uses SUB <subject> <sub.ID> <queue>
-func (c *Conn) QueueSubscribe(subject string, queue string, handler Handler) (int, error) {
+func (c *Client) QueueSubscribe(subject string, queue string, handler Handler) (int, error) {
 	subscriberID := c.router.addSubHandler(handler)
 
 	subIDBytes := strconv.AppendInt([]byte{}, int64(subscriberID), 10)
@@ -155,7 +217,7 @@ func (c *Conn) QueueSubscribe(subject string, queue string, handler Handler) (in
 	result := bytes.Join([][]byte{core.OpSub, core.Space, []byte(subject), core.Space, subIDBytes, core.Space, []byte(queue), core.CRLF}, nil)
 	logger.Debug(string(result))
 
-	if _, err := c.conn.Write(result); err != nil {
+	if _, err := c.writer.Write(result); err != nil {
 		return -1, fmt.Errorf("client QueueSubscribe, %v", err)
 	}
 	return subscriberID, nil
@@ -164,11 +226,11 @@ func (c *Conn) QueueSubscribe(subject string, queue string, handler Handler) (in
 // Request as publish, but blocks until receives a response from a subscriber
 // Creates a subscription to receive reply: SUB <subject> REPLY.<ID>
 // Then publishes request PUB <subject> REPLY.<ID> \n\r message \n\r
-func (c *Conn) Request(subject string, msg []byte) (*Message, error) {
+func (c *Client) Request(subject string, msg []byte) (*Message, error) {
 	return c.RequestWithCtx(context.Background(), subject, msg)
 }
 
-func (c *Conn) RequestWithCtx(ctx context.Context, subject string, msg []byte) (*Message, error) {
+func (c *Client) RequestWithCtx(ctx context.Context, subject string, msg []byte) (*Message, error) {
 	resCh := make(chan *Message)
 
 	c.nextReply++
@@ -185,7 +247,7 @@ func (c *Conn) RequestWithCtx(ctx context.Context, subject string, msg []byte) (
 	result := bytes.Join([][]byte{core.OpPub, core.Space, []byte(subject), core.Space, reply, core.CRLF, msg, core.CRLF}, nil)
 	logger.Debug(string(result))
 
-	if _, err := c.conn.Write(result); err != nil {
+	if _, err := c.writer.Write(result); err != nil {
 		return nil, fmt.Errorf("client Request PUB, %v", err)
 	}
 
