@@ -9,7 +9,6 @@ import (
 	"net"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/mateusf777/pubsub/core"
@@ -39,15 +38,19 @@ var logger *slog.Logger
 func SetLogLevel(level slog.Level) {
 	logHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})
 	logger = slog.New(logHandler)
+	logger = logger.With("lib", "client")
 }
 
 func init() {
 	logHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError})
 	logger = slog.New(logHandler)
+	logger = logger.With("lib", "client")
 }
 
 // Connect makes the connection with the server
 func Connect(address string) (*Conn, error) {
+	logger.With("location", "Connect()").Debug("Connect")
+
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
 		return nil, err
@@ -114,40 +117,51 @@ func Connect(address string) (*Conn, error) {
 
 // Close sends the "stop" operation so the server can clean up the resources
 func (c *Conn) Close() {
+	l := logger.With("location", "Conn.Close()")
+	l.Debug("Close")
+
 	_, err := c.conn.Write(core.Stop)
 	if err != nil {
-		if !strings.Contains(err.Error(), "broken pipe") {
-			logger.Error("Conn.Close", "error", err)
-		}
+		l.Info("Failed to send message to server, will proceed with close", "error", err)
 	} else {
-		for {
-			_, err := c.conn.Write(core.Ping)
-			if err != nil {
-				continue
-			}
-			break
-		}
+		l.Info("Waiting for Server to close the connection")
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+
+		c.waitServerClose(ctx)
+		l.Info("Server closed the connection")
 	}
 
-	logger.Info("close")
+	l.Info("Close reader")
 	c.cancel()
+	l.Info("Waiting for reader to close")
 	<-c.drained
 }
 
-// Drain message and connections
-func (c *Conn) Drain() {
-	_, _ = c.conn.Write(core.Stop)
+// waitServerClose waits the connection to be closed by the server
+// This assures all messages were consumed and processed.
+func (c *Conn) waitServerClose(ctx context.Context) {
+	l := logger.With("location", "Conn.waitServerClose()")
+
+	ticker := time.NewTimer(100 * time.Millisecond)
+
+	buf := make([]byte, 8)
+loop:
 	for {
-		_, err := c.conn.Write(core.Ping)
-		if err == nil {
-			continue
+		select {
+		case <-ticker.C:
+			_, err := c.conn.Read(buf)
+			if err == nil {
+				continue
+			}
+			l.Info("Read", "error", err)
+			break loop
+		case <-ctx.Done():
+			break loop
 		}
-		break
 	}
 
-	logger.Info("drained")
-	c.cancel()
-	<-c.drained
+	l.Info("Server closed connection")
 }
 
 func (c *Conn) GetClient() *Client {
@@ -231,13 +245,16 @@ func (c *Client) Request(subject string, msg []byte) (*Message, error) {
 }
 
 func (c *Client) RequestWithCtx(ctx context.Context, subject string, msg []byte) (*Message, error) {
+	l := logger.With("location", "Client.RequestWithCtx()")
+	l.Debug("RequestWithCtx")
+
 	resCh := make(chan *Message)
 
 	c.nextReply++
 	reply := strconv.AppendInt([]byte("REPLY."), int64(c.nextReply), 10)
 
 	subscriberID, err := c.Subscribe(string(reply), func(msg *Message) {
-		logger.Debug("received", "msg", msg)
+		l.Debug("received", "msg", msg)
 		resCh <- msg
 	})
 	if err != nil {
@@ -245,7 +262,7 @@ func (c *Client) RequestWithCtx(ctx context.Context, subject string, msg []byte)
 	}
 
 	result := bytes.Join([][]byte{core.OpPub, core.Space, []byte(subject), core.Space, reply, core.CRLF, msg, core.CRLF}, nil)
-	logger.Debug(string(result))
+	l.Debug(string(result))
 
 	if _, err := c.writer.Write(result); err != nil {
 		return nil, fmt.Errorf("client Request PUB, %v", err)

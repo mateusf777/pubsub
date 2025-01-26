@@ -15,6 +15,9 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
+	//client.SetLogLevel(slog.LevelInfo)
+	//core.SetLogLevel(slog.LevelInfo)
+
 	wg := &sync.WaitGroup{}
 	for i := 0; i < common.Routines; i++ {
 		wg.Add(1)
@@ -32,7 +35,7 @@ func send(wg *sync.WaitGroup) {
 	}
 	defer wg.Done()
 	defer func() {
-		conn.Drain()
+		conn.Close()
 		slog.Info("Connection closed")
 	}()
 

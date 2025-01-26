@@ -22,6 +22,7 @@ func newMsgRouter() *msgRouter {
 }
 
 func (ps *msgRouter) route(msg *Message, subscriberID int) error {
+
 	if handle, ok := ps.subHandlers[subscriberID]; ok {
 		handle(msg)
 		return nil

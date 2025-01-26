@@ -29,12 +29,14 @@ var logger *slog.Logger
 func init() {
 	logHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError})
 	logger = slog.New(logHandler)
+	logger = logger.With("lib", "CORE")
 }
 
 // SetLogLevel allows core user to configure a different level.
 func SetLogLevel(level slog.Level) {
 	logHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})
 	logger = slog.New(logHandler)
+	logger = logger.With("lib", "CORE")
 }
 
 // Protocol
@@ -133,19 +135,21 @@ func NewConnectionReader(cfg ConnectionReaderConfig) (*ConnectionReader, error) 
 
 // Read connection stream, adds data to buffer, split messages and send them to the channel.
 func (cr *ConnectionReader) Read() {
+	l := logger.With("location", "ConnectionReader.Read()")
 	accumulator := Empty
 	for {
 		n, err := cr.reader.Read(cr.buffer)
 		if err != nil {
+
 			if strings.Contains(err.Error(), ClosedErr) {
-				logger.Debug("Connection closed")
+				l.Info("Connection closed")
 				break
 			}
-			logger.Debug("net.Conn Read", "error", err)
+			l.Info("net.Conn Read", "error", err)
 			break
 		}
 
-		logger.Debug("Read", "data", string(cr.buffer[:n]))
+		l.Debug("Read", "data", string(cr.buffer[:n]))
 
 		toBeSplit := BuildBytes(accumulator, cr.buffer[:n])
 		messages := bytes.Split(toBeSplit, CRLF)
@@ -160,15 +164,15 @@ func (cr *ConnectionReader) Read() {
 			messages = messages[:len(messages)-1]
 		}
 
-		logger.Debug("messages", "messages", messages)
+		l.Debug("messages", "messages", messages)
 		for _, msg := range messages {
-			logger.Debug(string(msg))
+			l.Debug(string(msg))
 			select {
 			case <-cr.close:
-				logger.Debug("Closed before", "msg", string(msg))
+				l.Info("Closed before", "msg", string(msg))
 				return
 			default:
-				logger.Debug("dataCh <- msg!!!!!", "msg", string(msg))
+				l.Debug("dataCh <- msg!!!!!", "msg", string(msg))
 				cr.dataCh <- msg
 			}
 		}
@@ -176,6 +180,7 @@ func (cr *ConnectionReader) Read() {
 }
 
 func (cr *ConnectionReader) Close() {
+	logger.With("location", "ConnectionReader.Close()").Info("Close")
 	cr.close <- true
 	close(cr.close)
 }
@@ -223,6 +228,7 @@ func NewKeepAlive(cfg KeepAliveConfig) (*KeepAlive, error) {
 // Run KeepAlive mechanism. Normal traffic resets idle timeout. It sends PING to client if idle timeout happens.
 // After two pings without response, sends signal to close connection.
 func (k *KeepAlive) Run() {
+	l := logger.With("location", "KeepAlive.Run()")
 	checkTimeout := time.NewTicker(k.idleTimeout)
 	defer checkTimeout.Stop()
 
@@ -231,34 +237,32 @@ loop:
 	for {
 		select {
 		case <-k.resetInactivity:
-			logger.Debug("keep alive reset", "client", k.client)
+			l.Debug("Reset", "remote", k.client)
 			checkTimeout.Reset(k.idleTimeout)
 			count = 0
 
 		case <-k.stopKeepAlive:
-			logger.Debug("keep alive stop", "client", k.client)
+			l.Debug("Stop", "remote", k.client)
 			break loop
 
 		case <-checkTimeout.C:
 			count++
-			logger.Debug("keep alive check", "client", k.client, "count", count)
+			l.Debug("Check", "remote", k.client, "count", count)
 			if count > 2 {
 				k.closeHandler <- true
 				break loop
 			}
 
-			logger.Debug("keep alive PING", "client", k.client)
+			l.Debug("Send PING", "remote", k.client)
 			_, err := k.writer.Write(BuildBytes(OpPing, CRLF))
 			if err != nil {
-				logger.Error("net.Conn Write", "error", err)
-				if strings.Contains(err.Error(), "broken pipe") {
-					k.closeHandler <- true
-					return
-				}
+				l.Info("net.Conn Write, closing...", "error", err)
+				k.closeHandler <- true
+				return
 			}
 		}
 	}
-	logger.Debug("Keep Alive Closed")
+	l.Info("Closed")
 }
 
 // BuildBytes helps create a slice of bytes from multiple slices of bytes.

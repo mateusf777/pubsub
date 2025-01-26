@@ -2,5 +2,5 @@ package common
 
 const (
 	Routines = 1
-	Messages = 100
+	Messages = 10000
 )

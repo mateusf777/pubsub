@@ -11,8 +11,11 @@ import (
 )
 
 func (c *Conn) handle(ctx context.Context) {
+	l := logger.With("location", "Conn.handle()")
+	l.Debug("handle")
+
 	defer func(c *Conn) {
-		logger.Info("Closing connection", "remote", c.conn.RemoteAddr().String())
+		l.Info("Closing connection", "remote", c.conn.RemoteAddr().String())
 		c.drained <- struct{}{}
 	}(c)
 
@@ -23,6 +26,7 @@ func (c *Conn) handle(ctx context.Context) {
 	go c.keepAlive.Run()
 
 	<-c.closeHandler
+	l.Info("After closeHandler")
 }
 
 type messageProcessor struct {
@@ -36,16 +40,19 @@ type messageProcessor struct {
 }
 
 func (m *messageProcessor) Process(ctx context.Context) {
+	l := logger.With("location", "messageProcessor.Process()")
+	l.Debug("Process")
+
 	for {
 		select {
 		case <-ctx.Done():
 			m.stopKeepAlive <- true
 			m.closeHandler <- true
-			logger.Info("done!")
+			l.Info("done!")
 			return
 
 		case netData := <-m.data:
-			logger.Debug("Received", "netData", netData)
+			l.Debug("Received", "netData", netData)
 			m.resetInactivity <- true
 
 			data := bytes.TrimSpace(netData)
@@ -63,12 +70,12 @@ func (m *messageProcessor) Process(ctx context.Context) {
 				break
 
 			case bytes.Equal(bytes.ToUpper(data), core.OpERR):
-				logger.Error("OpERR", "value", data)
+				l.Error("OpERR", "value", data)
 				break
 
 			case bytes.HasPrefix(bytes.ToUpper(data), core.OpMsg):
-				logger.Debug("in opMsg...")
-				logger.Debug("calling handleMsg")
+				l.Debug("in opMsg...")
+				l.Debug("calling handleMsg")
 				m.routeMsg(data, m.data)
 
 			default:
@@ -93,13 +100,15 @@ func (m *messageProcessor) Process(ctx context.Context) {
 }
 
 func (m *messageProcessor) routeMsg(received []byte, dataCh chan []byte) {
-	logger.Debug("routeMsg", "received", received)
+	l := logger.With("location", "messageProcessor.routeMsg()")
+
+	l.Debug("routeMsg", "received", received)
 
 	args := bytes.Split(received, core.Space)
 	msg := <-dataCh
 
 	if len(args) < 3 || len(args) > 4 {
-		logger.Debug("routeMsg", "args", args)
+		l.Debug("routeMsg", "args", args)
 		return //"-ERR should be MSG <subject> <id> [reply-to] \n\r [payload] \n\r"
 	}
 
@@ -119,7 +128,7 @@ func (m *messageProcessor) routeMsg(received []byte, dataCh chan []byte) {
 
 	err := m.router.route(message, id)
 	if err != nil {
-		logger.Error("route", "error", err)
+		l.Error("route", "error", err)
 		return // fmt.Sprintf("-ERR %v\n", err)
 	}
 }

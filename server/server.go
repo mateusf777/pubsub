@@ -14,6 +14,7 @@ import (
 // Run stars to listen in the given address
 // Ex: server.Run("localhost:9999")
 func Run(address string) {
+	//core.SetLogLevel(slog.LevelInfo)
 
 	l, err := net.Listen("tcp4", address)
 	if err != nil {

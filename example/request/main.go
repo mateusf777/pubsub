@@ -1,15 +1,17 @@
 package main
 
 import (
+	"github.com/mateusf777/pubsub/client"
 	"log/slog"
 	"os"
-
-	"github.com/mateusf777/pubsub/client"
 )
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
+
+	//client.SetLogLevel(slog.LevelDebug)
+	//core.SetLogLevel(slog.LevelDebug)
 
 	conn, err := client.Connect(":9999")
 	if err != nil {
