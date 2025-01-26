@@ -20,10 +20,8 @@ func main() {
 	}
 	defer conn.Close()
 
-	c := conn.GetClient()
-
 	slog.Info("request time")
-	resp, err := c.Request("time", nil)
+	resp, err := conn.Request("time", nil)
 	if err != nil {
 		slog.Error("Request", "error", err)
 		return

@@ -39,12 +39,10 @@ func send(wg *sync.WaitGroup) {
 		slog.Info("Connection closed")
 	}()
 
-	c := conn.GetClient()
-
 	slog.Info("start sending")
 	for i := 0; i < common.Messages; i++ {
 		msg := fmt.Sprintf("this is a longer test with count: %d", i)
-		err := c.Publish("test", []byte(msg))
+		err := conn.Publish("test", []byte(msg))
 		if err != nil {
 			slog.Error("send Publish", "error", err)
 			return

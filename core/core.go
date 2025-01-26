@@ -2,9 +2,10 @@ package core
 
 import (
 	"bytes"
-	"errors"
+	"context"
 	"io"
 	"log/slog"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -99,36 +100,144 @@ var (
 	Ping     = BuildBytes(OpPing, CRLF)
 )
 
-// ConnectionReaderConfig is used to create a ConnectionReader.
-type ConnectionReaderConfig struct {
-	Reader     Reader
-	BufferSize int
-	DataChan   chan []byte
+type ConnectionHandlerConfig struct {
+	Conn        net.Conn
+	MsgHandler  MessageHandler
+	IsClient    bool
+	IdleTimeout time.Duration
+}
+
+type ConnectionHandler struct {
+	conn         net.Conn
+	reader       *ConnectionReader
+	msgProcessor *MessageProcessor
+	keepAlive    *KeepAlive
+	isClient     bool
+	data         chan []byte
+	activity     chan struct{}
+	close        chan struct{}
+}
+
+func NewConnectionHandler(cfg ConnectionHandlerConfig) *ConnectionHandler {
+	data := make(chan []byte)
+	activity := make(chan struct{})
+	closeHandler := make(chan struct{})
+
+	if cfg.IdleTimeout <= 0 {
+		cfg.IdleTimeout = IdleTimeout
+	}
+
+	reader := &ConnectionReader{
+		reader:   cfg.Conn,
+		buffer:   make([]byte, 1024),
+		dataCh:   data,
+		activity: activity,
+	}
+
+	msgProcessor := &MessageProcessor{
+		writer:  cfg.Conn,
+		handler: cfg.MsgHandler,
+		remote:  cfg.Conn.RemoteAddr().String(),
+		data:    data,
+		close:   closeHandler,
+	}
+
+	keepAlive := &KeepAlive{
+		writer:      cfg.Conn,
+		remote:      cfg.Conn.RemoteAddr().String(),
+		activity:    activity,
+		close:       activity,
+		idleTimeout: cfg.IdleTimeout,
+	}
+
+	return &ConnectionHandler{
+		conn:         cfg.Conn,
+		reader:       reader,
+		msgProcessor: msgProcessor,
+		keepAlive:    keepAlive,
+		isClient:     cfg.IsClient,
+		data:         data,
+		activity:     activity,
+		close:        closeHandler,
+	}
+}
+
+func (ch *ConnectionHandler) Handle() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go ch.reader.Read()
+
+	go ch.msgProcessor.Process(ctx)
+
+	go ch.keepAlive.Run(ctx)
+
+	<-ch.close
+}
+
+func (ch *ConnectionHandler) Close() {
+	l := logger.With("location", "ConnectionHandler.Close()")
+
+	remote := ch.conn.RemoteAddr().String()
+	l.Info("Closing Connection", "remote", remote)
+
+	if ch.isClient {
+		_, err := ch.conn.Write(Stop)
+		if err != nil {
+			l.Info("Failed to send STOP to server, will proceed to close", "error", err)
+		} else {
+			l.Info("Waiting for Server to close the connection")
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+
+			ch.waitServerClose(ctx)
+			l.Info("Server closed the connection")
+		}
+	}
+
+	if err := ch.conn.Close(); err != nil {
+		l.Warn("conn.Close()", "error", err)
+	}
+
+	close(ch.close)
+	close(ch.activity)
+	close(ch.data)
+
+	l.Info("Close Connection", "remote", remote)
+}
+
+// waitServerClose waits the connection to be closed by the server
+// This assures all messages were consumed and processed.
+func (ch *ConnectionHandler) waitServerClose(ctx context.Context) {
+	l := logger.With("location", "Conn.waitServerClose()")
+
+	ticker := time.NewTimer(100 * time.Millisecond)
+
+	buf := make([]byte, 8)
+loop:
+	for {
+		select {
+		case <-ticker.C:
+			_, err := ch.conn.Read(buf)
+			if err == nil {
+				continue
+			}
+			l.Info("Read", "error", err)
+			break loop
+		case <-ctx.Done():
+			break loop
+		}
+	}
+
+	l.Info("Server closed connection")
 }
 
 // ConnectionReader implements Read.
 type ConnectionReader struct {
-	reader Reader
-	buffer []byte
-	dataCh chan []byte
-}
-
-// NewConnectionReader creates a ConnectionReader from configuration.
-// Conn and DataChan are required. BufferSize will use 1024 if a value <= 0 is passed.
-func NewConnectionReader(cfg ConnectionReaderConfig) (*ConnectionReader, error) {
-	if cfg.Reader == nil || cfg.DataChan == nil {
-		return nil, errors.New("required configuration not set")
-	}
-
-	if cfg.BufferSize <= 0 {
-		cfg.BufferSize = 1024
-	}
-
-	return &ConnectionReader{
-		reader: cfg.Reader,
-		buffer: make([]byte, cfg.BufferSize),
-		dataCh: cfg.DataChan,
-	}, nil
+	reader   Reader
+	buffer   []byte
+	dataCh   chan<- []byte
+	activity chan<- struct{}
 }
 
 // Read connection stream, adds data to buffer, split messages and send them to the channel.
@@ -166,53 +275,54 @@ func (cr *ConnectionReader) Read() {
 		for _, msg := range messages {
 			l.Debug("Send msg to dataCh", "msg", string(msg))
 			cr.dataCh <- msg
+			cr.activity <- struct{}{}
+		}
+	}
+}
+
+type MessageHandler func(writer io.Writer, data []byte, dataCh <-chan []byte, close chan<- struct{})
+
+type MessageProcessor struct {
+	writer  io.Writer
+	handler MessageHandler
+	remote  string
+	data    <-chan []byte
+	close   chan<- struct{}
+}
+
+func (m *MessageProcessor) Process(ctx context.Context) {
+	//l := logger.With("location", "MessageProcessor.Process()")
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case data := <-m.data:
+			m.handler(m.writer, data, m.data, m.close)
 		}
 	}
 }
 
 // KeepAliveConfig configuration for the keep-alive mechanism
 type KeepAliveConfig struct {
-	Writer          Writer
-	Remote          string
-	ResetInactivity chan bool
-	StopKeepAlive   chan bool
-	CloseHandler    chan bool
-	IdleTimeout     time.Duration
+	Writer      Writer
+	Remote      string
+	Activity    <-chan struct{}
+	Close       chan<- struct{}
+	IdleTimeout time.Duration
 }
 
 // KeepAlive can run a keep-alive mechanism for a connection between PubSub server and client.
 type KeepAlive struct {
-	writer          Writer
-	remote          string
-	resetInactivity chan bool
-	stopKeepAlive   chan bool
-	closeHandler    chan bool
-	idleTimeout     time.Duration
-}
-
-// NewKeepAlive from configuration
-func NewKeepAlive(cfg KeepAliveConfig) (*KeepAlive, error) {
-	if cfg.Writer == nil || len(cfg.Remote) == 0 || cfg.ResetInactivity == nil || cfg.StopKeepAlive == nil || cfg.CloseHandler == nil {
-		return nil, errors.New("required configuration not set")
-	}
-
-	if cfg.IdleTimeout == 0 {
-		cfg.IdleTimeout = IdleTimeout
-	}
-
-	return &KeepAlive{
-		writer:          cfg.Writer,
-		remote:          cfg.Remote,
-		resetInactivity: cfg.ResetInactivity,
-		stopKeepAlive:   cfg.StopKeepAlive,
-		closeHandler:    cfg.CloseHandler,
-		idleTimeout:     cfg.IdleTimeout,
-	}, nil
+	writer      Writer
+	remote      string
+	activity    <-chan struct{}
+	close       chan<- struct{}
+	idleTimeout time.Duration
 }
 
 // Run KeepAlive mechanism. Normal traffic resets idle timeout. It sends PING to remote if idle timeout happens.
 // After two pings without response, sends signal to close connection.
-func (k *KeepAlive) Run() {
+func (k *KeepAlive) Run(ctx context.Context) {
 	l := logger.With("location", "KeepAlive.Run()")
 	checkTimeout := time.NewTicker(k.idleTimeout)
 	defer checkTimeout.Stop()
@@ -221,20 +331,20 @@ func (k *KeepAlive) Run() {
 loop:
 	for {
 		select {
-		case <-k.resetInactivity:
+		case <-k.activity:
 			l.Debug("Reset", "remote", k.remote)
 			checkTimeout.Reset(k.idleTimeout)
 			count = 0
 
-		case <-k.stopKeepAlive:
-			l.Debug("Stop", "remote", k.remote)
+		case <-ctx.Done():
+			l.Debug("Done", "remote", k.remote)
 			break loop
 
 		case <-checkTimeout.C:
 			count++
 			l.Debug("Check", "remote", k.remote, "count", count)
 			if count > 2 {
-				k.closeHandler <- true
+				k.close <- struct{}{}
 				break loop
 			}
 
@@ -242,7 +352,7 @@ loop:
 			_, err := k.writer.Write(BuildBytes(OpPing, CRLF))
 			if err != nil {
 				l.Info("net.Conn Write, closing...", "error", err)
-				k.closeHandler <- true
+				k.close <- struct{}{}
 				return
 			}
 		}

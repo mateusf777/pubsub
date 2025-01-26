@@ -14,6 +14,8 @@ import (
 // Run stars to listen in the given address
 // Ex: server.Run("localhost:9999")
 func Run(address string) {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
 
 	l, err := net.Listen("tcp4", address)
 	if err != nil {
@@ -50,14 +52,17 @@ func acceptClients(l net.Listener) {
 			return
 		}
 
-		cfg, err := buildConnHandlerConfig(c, ps)
-		if err != nil {
-			slog.Error("Server.acceptClient", "error", err)
-			return
-		}
+		ch := core.NewConnectionHandler(core.ConnectionHandlerConfig{
+			Conn:       c,
+			MsgHandler: MessageHandler(ps, c.RemoteAddr().String()),
+		})
 
-		ch := NewConnectionHandler(cfg)
-		go ch.Handle()
+		serverConnHandler := &ConnHandler{
+			connHandler: ch,
+			pubSub:      ps,
+			remote:      c.RemoteAddr().String(),
+		}
+		go serverConnHandler.Run()
 	}
 }
 
@@ -66,62 +71,4 @@ func Wait() {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 	<-signals
-}
-
-// buildConnHandlerConfig contains the ConnectionHandler configuration
-// It puts together all the components:
-// core.ConnectionReader, MessageProcessor, KeepAlive and communication channels.
-func buildConnHandlerConfig(conn ClientConn, ps PubSubConn) (ConnectionHandlerConfig, error) {
-
-	// Creates channels necessary for communication between the components running concurrently.
-	dataCh := make(chan []byte)
-	resetCh := make(chan bool)
-	closeCh := make(chan bool)
-	stopCh := make(chan bool)
-
-	// Creates connection reader
-	cr, err := core.NewConnectionReader(core.ConnectionReaderConfig{
-		Reader:   conn,
-		DataChan: dataCh,
-	})
-	if err != nil {
-		slog.Error("NewConnectionHandler", "error", err)
-		return ConnectionHandlerConfig{}, err
-	}
-
-	// Creates the keep alive
-	ka, err := core.NewKeepAlive(core.KeepAliveConfig{
-		Writer:          conn,
-		Remote:          conn.RemoteAddr().String(),
-		CloseHandler:    closeCh,
-		ResetInactivity: resetCh,
-		StopKeepAlive:   stopCh,
-	})
-	if err != nil {
-		slog.Error("NewConnectionHandler", "error", err)
-		return ConnectionHandlerConfig{}, err
-	}
-
-	// Creates the message processor
-	mp := &messageProcessor{
-		conn:            conn,
-		pubSub:          ps,
-		remote:          conn.RemoteAddr().String(),
-		data:            dataCh,
-		resetInactivity: resetCh,
-		stopKeepAlive:   stopCh,
-		closeHandler:    closeCh,
-	}
-
-	return ConnectionHandlerConfig{
-		Conn:            conn,
-		PubSub:          ps,
-		ConnReader:      cr,
-		MsgProc:         mp,
-		KeepAlive:       ka,
-		Data:            dataCh,
-		ResetInactivity: resetCh,
-		StopKeepAlive:   stopCh,
-		CloseHandler:    closeCh,
-	}, nil
 }

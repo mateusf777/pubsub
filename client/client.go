@@ -14,23 +14,17 @@ import (
 	"github.com/mateusf777/pubsub/core"
 )
 
+// Message contains data and metadata about a message sent from a publisher to a subscriber
+type Message struct {
+	Subject string
+	Reply   string
+	Data    []byte
+}
+
 type router interface {
 	route(msg *Message, subscriberID int) error
 	addSubHandler(handler Handler) int
 	removeSubHandler(subscriberID int)
-}
-
-// Conn contains the state of the connection with the pubsub server to perform the necessary operations
-type Conn struct {
-	conn         net.Conn
-	router       router
-	connReader   *core.ConnectionReader
-	msgProc      *messageProcessor
-	keepAlive    *core.KeepAlive
-	client       *Client
-	closeHandler chan bool
-	cancel       context.CancelFunc
-	drained      chan struct{}
 }
 
 var logger *slog.Logger
@@ -48,7 +42,7 @@ func init() {
 }
 
 // Connect makes the connection with the server
-func Connect(address string) (*Conn, error) {
+func Connect(address string) (*Client, error) {
 	logger.With("location", "Connect()").Debug("Connect")
 
 	conn, err := net.Dial("tcp", address)
@@ -56,122 +50,34 @@ func Connect(address string) (*Conn, error) {
 		return nil, err
 	}
 
-	dataCh := make(chan []byte, 10)
-	resetInactivity := make(chan bool)
-	stopKeepAlive := make(chan bool)
-	closeHandler := make(chan bool)
-
 	rt := newMsgRouter()
 
-	connReader, err := core.NewConnectionReader(core.ConnectionReaderConfig{
-		Reader:   conn,
-		DataChan: dataCh,
+	connHandler := core.NewConnectionHandler(core.ConnectionHandlerConfig{
+		Conn:       conn,
+		MsgHandler: MessageHandler(rt),
+		IsClient:   true,
 	})
-	if err != nil {
-		return nil, err
-	}
 
 	client := &Client{
-		writer: conn,
-		router: rt,
+		connHandler: connHandler,
+		writer:      conn,
+		router:      rt,
 	}
 
-	msgProc := &messageProcessor{
-		writer:          conn,
-		router:          rt,
-		client:          client,
-		data:            dataCh,
-		resetInactivity: resetInactivity,
-		stopKeepAlive:   stopKeepAlive,
-		closeHandler:    closeHandler,
-	}
+	go connHandler.Handle()
 
-	keepAlive, err := core.NewKeepAlive(core.KeepAliveConfig{
-		Writer:          conn,
-		Remote:          conn.RemoteAddr().String(),
-		ResetInactivity: resetInactivity,
-		StopKeepAlive:   stopKeepAlive,
-		CloseHandler:    closeHandler,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	c := &Conn{
-		conn:         conn,
-		router:       rt,
-		connReader:   connReader,
-		msgProc:      msgProc,
-		keepAlive:    keepAlive,
-		client:       client,
-		closeHandler: closeHandler,
-		cancel:       cancel,
-		drained:      make(chan struct{}),
-	}
-
-	go c.handle(ctx)
-
-	return c, nil
-}
-
-// Close sends the "stop" operation so the server can clean up the resources
-func (c *Conn) Close() {
-	l := logger.With("location", "Conn.Close()")
-	l.Debug("Close")
-
-	_, err := c.conn.Write(core.Stop)
-	if err != nil {
-		l.Info("Failed to send message to server, will proceed with close", "error", err)
-	} else {
-		l.Info("Waiting for Server to close the connection")
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-
-		c.waitServerClose(ctx)
-		l.Info("Server closed the connection")
-	}
-
-	l.Info("Close reader")
-	c.cancel()
-	l.Info("Waiting for reader to close")
-	<-c.drained
-}
-
-// waitServerClose waits the connection to be closed by the server
-// This assures all messages were consumed and processed.
-func (c *Conn) waitServerClose(ctx context.Context) {
-	l := logger.With("location", "Conn.waitServerClose()")
-
-	ticker := time.NewTimer(100 * time.Millisecond)
-
-	buf := make([]byte, 8)
-loop:
-	for {
-		select {
-		case <-ticker.C:
-			_, err := c.conn.Read(buf)
-			if err == nil {
-				continue
-			}
-			l.Info("Read", "error", err)
-			break loop
-		case <-ctx.Done():
-			break loop
-		}
-	}
-
-	l.Info("Server closed connection")
-}
-
-func (c *Conn) GetClient() *Client {
-	return c.client
+	return client, nil
 }
 
 type Client struct {
-	writer    io.Writer
-	router    router
-	nextReply int
+	connHandler *core.ConnectionHandler
+	writer      io.Writer
+	router      router
+	nextReply   int
+}
+
+func (c *Client) Close() {
+	c.connHandler.Close()
 }
 
 // Publish sends a message for a subject
@@ -283,4 +189,11 @@ func (c *Client) RequestWithCtx(ctx context.Context, subject string, msg []byte)
 		}
 		return r, nil
 	}
+}
+
+func (c *Client) Reply(msg *Message, data []byte) error {
+	if len(msg.Reply) == 0 {
+		return nil
+	}
+	return c.Publish(msg.Reply, data)
 }

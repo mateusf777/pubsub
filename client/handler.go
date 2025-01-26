@@ -2,7 +2,6 @@ package client
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"strconv"
 	"strings"
@@ -10,97 +9,57 @@ import (
 	"github.com/mateusf777/pubsub/core"
 )
 
-func (c *Conn) handle(ctx context.Context) {
-	l := logger.With("location", "Conn.handle()")
-	l.Debug("handle")
+func MessageHandler(router router) core.MessageHandler {
 
-	defer func(c *Conn) {
-		l.Info("Closing connection", "remote", c.conn.RemoteAddr().String())
-		c.drained <- struct{}{}
-	}(c)
+	return func(writer io.Writer, raw []byte, dataCh <-chan []byte, _ chan<- struct{}) {
 
-	go c.connReader.Read()
+		l := logger.With("location", "Client MessageHandler")
 
-	go c.msgProc.Process(ctx)
+		logger.Debug("Received", "netData", string(raw))
 
-	go c.keepAlive.Run()
+		data := bytes.TrimSpace(raw)
 
-	<-c.closeHandler
-	l.Info("After closeHandler")
-}
+		var result []byte
+		switch {
+		case bytes.Equal(bytes.ToUpper(data), core.OpPing):
+			result = bytes.Join([][]byte{core.OpPong, core.CRLF}, nil)
 
-type messageProcessor struct {
-	writer          io.Writer
-	router          router
-	client          *Client
-	data            chan []byte
-	resetInactivity chan bool
-	stopKeepAlive   chan bool
-	closeHandler    chan bool
-}
-
-func (m *messageProcessor) Process(ctx context.Context) {
-	l := logger.With("location", "messageProcessor.Process()")
-	l.Debug("Process")
-
-	for {
-		select {
-		case <-ctx.Done():
-			m.stopKeepAlive <- true
-			m.closeHandler <- true
-			l.Info("done!")
+		case bytes.Equal(bytes.ToUpper(data), core.OpPong):
 			return
 
-		case netData := <-m.data:
-			l.Debug("Received", "netData", netData)
-			m.resetInactivity <- true
+		case bytes.Equal(bytes.ToUpper(data), core.OpOK):
+			return
 
-			data := bytes.TrimSpace(netData)
+		case bytes.Equal(bytes.ToUpper(data), core.OpERR):
+			l.Error("OpERR", "value", data)
+			return
 
-			var result []byte
-			switch {
-			case bytes.Equal(bytes.ToUpper(data), core.OpPing):
-				result = bytes.Join([][]byte{core.OpPong, core.CRLF}, nil)
-				break
+		case bytes.HasPrefix(bytes.ToUpper(data), core.OpMsg):
+			l.Debug("in opMsg...")
+			l.Debug("calling handleMsg")
+			handleMsg(router, data, dataCh)
 
-			case bytes.Equal(bytes.ToUpper(data), core.OpPong):
-				break
-
-			case bytes.Equal(bytes.ToUpper(data), core.OpOK):
-				break
-
-			case bytes.Equal(bytes.ToUpper(data), core.OpERR):
-				l.Error("OpERR", "value", data)
-				break
-
-			case bytes.HasPrefix(bytes.ToUpper(data), core.OpMsg):
-				l.Debug("in opMsg...")
-				l.Debug("calling handleMsg")
-				m.routeMsg(data, m.data)
-
-			default:
-				if bytes.Equal(data, core.Empty) {
-					continue
-				}
-				result = core.Empty
+		default:
+			if bytes.Equal(data, core.Empty) {
+				return
 			}
+			result = core.Empty
+		}
 
-			if !bytes.Equal(result, core.Empty) {
-				_, err := m.writer.Write(result)
-				if err != nil {
-					if strings.Contains(err.Error(), "broken pipe") {
-						continue
-					}
-					logger.Error("client handle", "error", err)
+		if !bytes.Equal(result, core.Empty) {
+			_, err := writer.Write(result)
+			if err != nil {
+				if strings.Contains(err.Error(), "broken pipe") {
+					return
 				}
+				logger.Error("client handle", "error", err)
 			}
-
 		}
 	}
 }
 
-func (m *messageProcessor) routeMsg(received []byte, dataCh chan []byte) {
-	l := logger.With("location", "messageProcessor.routeMsg()")
+func handleMsg(router router, received []byte, dataCh <-chan []byte) {
+	l := logger.With("location", "handleMsg()")
 
 	l.Debug("routeMsg", "received", received)
 
@@ -118,7 +77,6 @@ func (m *messageProcessor) routeMsg(received []byte, dataCh chan []byte) {
 	}
 
 	message := &Message{
-		client:  m.client,
 		Subject: string(args[1]),
 		Reply:   string(reply),
 		Data:    msg,
@@ -126,7 +84,7 @@ func (m *messageProcessor) routeMsg(received []byte, dataCh chan []byte) {
 
 	id, _ := strconv.Atoi(string(args[2]))
 
-	err := m.router.route(message, id)
+	err := router.route(message, id)
 	if err != nil {
 		l.Error("route", "error", err)
 		return // fmt.Sprintf("-ERR %v\n", err)

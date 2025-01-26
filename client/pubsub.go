@@ -2,8 +2,6 @@ package client
 
 import (
 	"fmt"
-
-	"github.com/mateusf777/pubsub/core"
 )
 
 // Handler is a function to handle messages sent to subjects to which it's subscribed
@@ -38,21 +36,4 @@ func (ps *msgRouter) addSubHandler(handler Handler) int {
 
 func (ps *msgRouter) removeSubHandler(subscriberID int) {
 	delete(ps.subHandlers, subscriberID)
-}
-
-// Message contains data and metadata about a message sent from a publisher to a subscriber
-type Message struct {
-	client  *Client
-	Subject string
-	Reply   string
-	Data    []byte
-}
-
-// Respond is a convenience method to respond to a requester
-func (m *Message) Respond(data []byte) error {
-	// Ignores responses when there's no reply subject
-	if m.Reply == string(core.Empty) {
-		return nil
-	}
-	return m.client.Publish(m.Reply, data)
 }

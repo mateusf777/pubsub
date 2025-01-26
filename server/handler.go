@@ -2,19 +2,13 @@ package server
 
 import (
 	"bytes"
-	"fmt"
+	"io"
 	"log/slog"
-	"net"
 	"strconv"
 	"strings"
 
 	"github.com/mateusf777/pubsub/core"
 )
-
-// ClientConn wraps network remote connection.
-type ClientConn interface {
-	net.Conn
-}
 
 // PubSubConn provides an API to the PubSub engine.
 type PubSubConn interface {
@@ -34,128 +28,42 @@ type PubSubConn interface {
 	hasSubscriber(subject string) bool
 }
 
-// ConnReader decouples core.ConnectionReader from ConnectionHandler.
-type ConnReader interface {
-	Read()
+type ConnectionHandler interface {
+	Handle()
+	Close()
 }
 
-// MessageProcessor decouples messageProcessor from ConnectionHandler.
-type MessageProcessor interface {
-	Process()
+type ConnHandler struct {
+	connHandler ConnectionHandler
+	pubSub      PubSubConn
+	remote      string
 }
 
-// KeepAlive decouples core.KeepAlive from ConnectionHandler.
-type KeepAlive interface {
-	Run()
+func (s *ConnHandler) Run() {
+	defer s.Close()
+	s.connHandler.Handle()
 }
 
-// ConnectionHandlerConfig it's used to create a ConnectionHandler.
-type ConnectionHandlerConfig struct {
-	Conn            ClientConn
-	PubSub          PubSubConn
-	ConnReader      ConnReader
-	MsgProc         MessageProcessor
-	KeepAlive       KeepAlive
-	Data            chan []byte
-	ResetInactivity chan bool
-	StopKeepAlive   chan bool
-	CloseHandler    chan bool
+func (s *ConnHandler) Close() {
+	s.pubSub.UnsubAll(s.remote)
+	s.connHandler.Close()
 }
 
-// ConnectionHandler handles an accepted remote connection.
-type ConnectionHandler struct {
-	conn            ClientConn
-	pubSub          PubSubConn
-	connReader      ConnReader
-	msgProc         MessageProcessor
-	keepAlive       KeepAlive
-	data            chan []byte
-	resetInactivity chan bool
-	stopKeepAlive   chan bool
-	closeHandler    chan bool
-}
+// MessageHandler return a handler for processing a remote message, verify and dispatch it and writes the response to the connection.
+func MessageHandler(pubSub PubSubConn, remote string) core.MessageHandler {
 
-// NewConnectionHandler creates all the necessary channels and components used by the connection handler.
-func NewConnectionHandler(cfg ConnectionHandlerConfig) *ConnectionHandler {
-	// Binds everything in the ConnectionHandler
-	return &ConnectionHandler{
-		conn:            cfg.Conn,
-		pubSub:          cfg.PubSub,
-		connReader:      cfg.ConnReader,
-		msgProc:         cfg.MsgProc,
-		keepAlive:       cfg.KeepAlive,
-		data:            cfg.Data,
-		resetInactivity: cfg.ResetInactivity,
-		stopKeepAlive:   cfg.StopKeepAlive,
-		closeHandler:    cfg.CloseHandler,
-	}
-}
+	return func(writer io.Writer, raw []byte, dataCh <-chan []byte, close chan<- struct{}) {
 
-// Handle the remote connection
-func (h *ConnectionHandler) Handle() {
-	// Cleanup resources
-	defer h.Close()
-
-	// Reads messages from the connection
-	go h.connReader.Read()
-	// Process the messages
-	go h.msgProc.Process()
-	// Runs process that verifies connection activity
-	go h.keepAlive.Run()
-
-	// Waits for a signal to close the connection handler
-	<-h.closeHandler
-}
-
-// Close cleanup ConnectionHandler resources
-func (h *ConnectionHandler) Close() {
-	// Removes all remote subscribers from pubSub engine.
-	h.pubSub.UnsubAll(h.conn.RemoteAddr().String())
-
-	// Close the connection with the remote
-	err := h.conn.Close()
-	if err != nil {
-		slog.Error("Server.handleConnection", "error", err)
-	}
-
-	// Close all channels
-	close(h.closeHandler)
-	close(h.stopKeepAlive)
-	close(h.resetInactivity)
-	close(h.data)
-
-	slog.Info("Closed connection", "remote", h.conn.RemoteAddr().String())
-}
-
-type messageProcessor struct {
-	conn            ClientConn
-	pubSub          PubSubConn
-	remote          string
-	data            chan []byte
-	resetInactivity chan bool
-	stopKeepAlive   chan bool
-	closeHandler    chan bool
-}
-
-// Process waits for a remote message, verifies and dispatches it to the appropriated handler, and writes the response to the connection.
-func (m *messageProcessor) Process() {
-
-loop:
-	for netData := range m.data {
-		// If receive data from remote, reset keep-alive
-		m.resetInactivity <- true
-
-		data := bytes.TrimSpace(netData)
+		data := bytes.TrimSpace(raw)
 
 		var result []byte
 		switch {
 		// STOP
 		case bytes.Equal(bytes.ToUpper(data), core.OpStop), bytes.Equal(data, core.ControlC):
-			slog.Info("Closing connection", "remote", m.remote)
+			slog.Info("Closing connection", "remote", remote)
 			// If remote send STOP we close resources
-			m.stopKeepAlive <- true
-			m.closeHandler <- true
-			break loop
+			close <- struct{}{}
+			return
 
 		// PING
 		case bytes.Equal(bytes.ToUpper(data), core.OpPing):
@@ -167,36 +75,35 @@ loop:
 
 		// PUB
 		case bytes.HasPrefix(bytes.ToUpper(data), core.OpPub):
-			result = handlePub(m.pubSub, data, m.data)
+			result = handlePub(pubSub, data, dataCh)
 
 		// SUB
 		case bytes.HasPrefix(bytes.ToUpper(data), core.OpSub):
 			slog.Debug("sub", "value", data)
-			result = handleSub(m.conn, m.pubSub, m.remote, data)
+			result = handleSub(writer, pubSub, remote, data)
 
 		// UNSUB
 		case bytes.HasPrefix(bytes.ToUpper(data), core.OpUnsub):
-			result = handleUnsub(m.pubSub, m.remote, data)
+			result = handleUnsub(pubSub, remote, data)
 
 		// NO DATA
 		case bytes.Equal(data, core.Empty):
-			continue
+			return
 
 		default:
 			// UNKNOWN
 			result = core.BuildBytes([]byte("-ERR invalid protocol"), core.CRLF)
 		}
 
-		_, err := m.conn.Write(result)
+		_, err := writer.Write(result)
 		if err != nil {
 			if strings.Contains(err.Error(), "broken pipe") || strings.Contains(err.Error(), "connection reset by peer") {
-				continue
+				return
 			}
 			slog.Error("server handler handleConnection", "error", err)
 		}
 
 	}
-	slog.Debug("Message Processor Closed")
 }
 
 // handlePub Handles PUB message. See core.OpPub.
@@ -248,7 +155,7 @@ func handleUnsub(pubSub PubSubConn, remote string, received []byte) []byte {
 }
 
 // handleSub Handles SUB. See core.OpSub.
-func handleSub(conn ClientConn, pubSub PubSubConn, remote string, received []byte) []byte {
+func handleSub(writer io.Writer, pubSub PubSubConn, remote string, received []byte) []byte {
 	// Default result
 	result := core.OK
 
@@ -269,7 +176,7 @@ func handleSub(conn ClientConn, pubSub PubSubConn, remote string, received []byt
 	opts = append(opts, WithID(subID))
 
 	// Dispatch
-	err := pubSub.Subscribe(string(args[1]), remote, subscriberHandler(conn, subID), opts...)
+	err := pubSub.Subscribe(string(args[1]), remote, subscriberHandler(writer, subID), opts...)
 	if err != nil {
 		return core.BuildBytes(core.OpERR, core.Space, []byte(err.Error()))
 	}
@@ -277,26 +184,15 @@ func handleSub(conn ClientConn, pubSub PubSubConn, remote string, received []byt
 	return result
 }
 
-func subscriberHandler(conn ClientConn, sid int) Handler {
+func subscriberHandler(writer io.Writer, sid int) Handler {
 	return func(msg Message) {
-		err := sendMsg(conn, sid, msg)
+		subID := strconv.AppendInt([]byte{}, int64(sid), 10)
+		result := core.BuildBytes(core.OpMsg, core.Space, []byte(msg.Subject), core.Space, subID, core.Space, []byte(msg.Reply), core.CRLF, msg.Data, core.CRLF)
+		slog.Debug("MSG message", "result", string(result))
+
+		_, err := writer.Write(result)
 		if err != nil {
 			slog.Error("send", "error", err)
 		}
 	}
-}
-
-// sendMsg sends MSG back to remote. See core.OpMsg.
-func sendMsg(conn ClientConn, sid int, msg Message) error {
-
-	subID := strconv.AppendInt([]byte{}, int64(sid), 10)
-	result := core.BuildBytes(core.OpMsg, core.Space, []byte(msg.Subject), core.Space, subID, core.Space, []byte(msg.Reply), core.CRLF, msg.Data, core.CRLF)
-	slog.Debug("MSG message", "result", result)
-
-	_, err := conn.Write(result)
-	if err != nil {
-		return fmt.Errorf("server handler sendMsg, %v", err)
-	}
-
-	return nil
 }
