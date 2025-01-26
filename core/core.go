@@ -29,14 +29,14 @@ var logger *slog.Logger
 func init() {
 	logHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError})
 	logger = slog.New(logHandler)
-	logger = logger.With("lib", "CORE")
+	logger = logger.With("lib", "core")
 }
 
 // SetLogLevel allows core user to configure a different level.
 func SetLogLevel(level slog.Level) {
 	logHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})
 	logger = slog.New(logHandler)
-	logger = logger.With("lib", "CORE")
+	logger = logger.With("lib", "core")
 }
 
 // Protocol
@@ -111,7 +111,6 @@ type ConnectionReader struct {
 	reader Reader
 	buffer []byte
 	dataCh chan []byte
-	close  chan bool
 }
 
 // NewConnectionReader creates a ConnectionReader from configuration.
@@ -129,7 +128,6 @@ func NewConnectionReader(cfg ConnectionReaderConfig) (*ConnectionReader, error) 
 		reader: cfg.Reader,
 		buffer: make([]byte, cfg.BufferSize),
 		dataCh: cfg.DataChan,
-		close:  make(chan bool),
 	}, nil
 }
 
@@ -166,29 +164,16 @@ func (cr *ConnectionReader) Read() {
 
 		l.Debug("messages", "messages", messages)
 		for _, msg := range messages {
-			l.Debug(string(msg))
-			select {
-			case <-cr.close:
-				l.Info("Closed before", "msg", string(msg))
-				return
-			default:
-				l.Debug("dataCh <- msg!!!!!", "msg", string(msg))
-				cr.dataCh <- msg
-			}
+			l.Debug("Send msg to dataCh", "msg", string(msg))
+			cr.dataCh <- msg
 		}
 	}
-}
-
-func (cr *ConnectionReader) Close() {
-	logger.With("location", "ConnectionReader.Close()").Info("Close")
-	cr.close <- true
-	close(cr.close)
 }
 
 // KeepAliveConfig configuration for the keep-alive mechanism
 type KeepAliveConfig struct {
 	Writer          Writer
-	Client          string
+	Remote          string
 	ResetInactivity chan bool
 	StopKeepAlive   chan bool
 	CloseHandler    chan bool
@@ -198,7 +183,7 @@ type KeepAliveConfig struct {
 // KeepAlive can run a keep-alive mechanism for a connection between PubSub server and client.
 type KeepAlive struct {
 	writer          Writer
-	client          string
+	remote          string
 	resetInactivity chan bool
 	stopKeepAlive   chan bool
 	closeHandler    chan bool
@@ -207,7 +192,7 @@ type KeepAlive struct {
 
 // NewKeepAlive from configuration
 func NewKeepAlive(cfg KeepAliveConfig) (*KeepAlive, error) {
-	if cfg.Writer == nil || len(cfg.Client) == 0 || cfg.ResetInactivity == nil || cfg.StopKeepAlive == nil || cfg.CloseHandler == nil {
+	if cfg.Writer == nil || len(cfg.Remote) == 0 || cfg.ResetInactivity == nil || cfg.StopKeepAlive == nil || cfg.CloseHandler == nil {
 		return nil, errors.New("required configuration not set")
 	}
 
@@ -217,7 +202,7 @@ func NewKeepAlive(cfg KeepAliveConfig) (*KeepAlive, error) {
 
 	return &KeepAlive{
 		writer:          cfg.Writer,
-		client:          cfg.Client,
+		remote:          cfg.Remote,
 		resetInactivity: cfg.ResetInactivity,
 		stopKeepAlive:   cfg.StopKeepAlive,
 		closeHandler:    cfg.CloseHandler,
@@ -225,7 +210,7 @@ func NewKeepAlive(cfg KeepAliveConfig) (*KeepAlive, error) {
 	}, nil
 }
 
-// Run KeepAlive mechanism. Normal traffic resets idle timeout. It sends PING to client if idle timeout happens.
+// Run KeepAlive mechanism. Normal traffic resets idle timeout. It sends PING to remote if idle timeout happens.
 // After two pings without response, sends signal to close connection.
 func (k *KeepAlive) Run() {
 	l := logger.With("location", "KeepAlive.Run()")
@@ -237,23 +222,23 @@ loop:
 	for {
 		select {
 		case <-k.resetInactivity:
-			l.Debug("Reset", "remote", k.client)
+			l.Debug("Reset", "remote", k.remote)
 			checkTimeout.Reset(k.idleTimeout)
 			count = 0
 
 		case <-k.stopKeepAlive:
-			l.Debug("Stop", "remote", k.client)
+			l.Debug("Stop", "remote", k.remote)
 			break loop
 
 		case <-checkTimeout.C:
 			count++
-			l.Debug("Check", "remote", k.client, "count", count)
+			l.Debug("Check", "remote", k.remote, "count", count)
 			if count > 2 {
 				k.closeHandler <- true
 				break loop
 			}
 
-			l.Debug("Send PING", "remote", k.client)
+			l.Debug("Send PING", "remote", k.remote)
 			_, err := k.writer.Write(BuildBytes(OpPing, CRLF))
 			if err != nil {
 				l.Info("net.Conn Write, closing...", "error", err)

@@ -86,10 +86,6 @@ func TestNewConnectionReader(t *testing.T) {
 				return
 			}
 
-			if got != nil {
-				got.close = nil
-			}
-
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("NewConnectionReader() got = %v, want %v", got, tt.want)
 			}
@@ -208,7 +204,7 @@ func TestConnectionReader_Read(t *testing.T) {
 func TestNewKeepAlive(t *testing.T) {
 
 	expectedWriter := NewMockWriter(t)
-	expectedClient := "client"
+	expectedRemote := "remote"
 	expectedResetCh := make(chan bool)
 	expectedStopCh := make(chan bool)
 	expectedCloseCh := make(chan bool)
@@ -228,7 +224,7 @@ func TestNewKeepAlive(t *testing.T) {
 			args: args{
 				cfg: KeepAliveConfig{
 					Writer:          expectedWriter,
-					Client:          expectedClient,
+					Remote:          expectedRemote,
 					ResetInactivity: expectedResetCh,
 					StopKeepAlive:   expectedStopCh,
 					CloseHandler:    expectedCloseCh,
@@ -237,7 +233,7 @@ func TestNewKeepAlive(t *testing.T) {
 			},
 			want: &KeepAlive{
 				writer:          expectedWriter,
-				client:          expectedClient,
+				remote:          expectedRemote,
 				resetInactivity: expectedResetCh,
 				stopKeepAlive:   expectedStopCh,
 				closeHandler:    expectedCloseCh,
@@ -250,7 +246,7 @@ func TestNewKeepAlive(t *testing.T) {
 			args: args{
 				cfg: KeepAliveConfig{
 					Writer:          expectedWriter,
-					Client:          expectedClient,
+					Remote:          expectedRemote,
 					ResetInactivity: expectedResetCh,
 					StopKeepAlive:   expectedStopCh,
 					CloseHandler:    expectedCloseCh,
@@ -258,7 +254,7 @@ func TestNewKeepAlive(t *testing.T) {
 			},
 			want: &KeepAlive{
 				writer:          expectedWriter,
-				client:          expectedClient,
+				remote:          expectedRemote,
 				resetInactivity: expectedResetCh,
 				stopKeepAlive:   expectedStopCh,
 				closeHandler:    expectedCloseCh,
@@ -271,7 +267,7 @@ func TestNewKeepAlive(t *testing.T) {
 			args: args{
 				cfg: KeepAliveConfig{
 					ResetInactivity: expectedResetCh,
-					Client:          expectedClient,
+					Remote:          expectedRemote,
 					StopKeepAlive:   expectedStopCh,
 					CloseHandler:    expectedCloseCh,
 					IdleTimeout:     expectedIdleTimeout,
@@ -285,7 +281,7 @@ func TestNewKeepAlive(t *testing.T) {
 			args: args{
 				cfg: KeepAliveConfig{
 					Writer:        expectedWriter,
-					Client:        expectedClient,
+					Remote:        expectedRemote,
 					StopKeepAlive: expectedStopCh,
 					CloseHandler:  expectedCloseCh,
 					IdleTimeout:   expectedIdleTimeout,
@@ -299,7 +295,7 @@ func TestNewKeepAlive(t *testing.T) {
 			args: args{
 				cfg: KeepAliveConfig{
 					Writer:          expectedWriter,
-					Client:          expectedClient,
+					Remote:          expectedRemote,
 					ResetInactivity: expectedResetCh,
 					CloseHandler:    expectedCloseCh,
 					IdleTimeout:     expectedIdleTimeout,
@@ -313,7 +309,7 @@ func TestNewKeepAlive(t *testing.T) {
 			args: args{
 				cfg: KeepAliveConfig{
 					Writer:          expectedWriter,
-					Client:          expectedClient,
+					Remote:          expectedRemote,
 					ResetInactivity: expectedResetCh,
 					StopKeepAlive:   expectedStopCh,
 					IdleTimeout:     expectedIdleTimeout,
@@ -323,7 +319,7 @@ func TestNewKeepAlive(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "Try to create without client",
+			name: "Try to create without remote",
 			args: args{
 				cfg: KeepAliveConfig{
 					Writer:          expectedWriter,

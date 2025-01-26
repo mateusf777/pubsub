@@ -72,7 +72,7 @@ func TestNewConnectionHandler(t *testing.T) {
 func TestConnectionHandler_Handle(t *testing.T) {
 
 	expectedAddr := &net.IPAddr{IP: []byte{127, 0, 0, 1}}
-	expectedClient := expectedAddr.String()
+	expectedRemote := expectedAddr.String()
 
 	type fields struct {
 		conn            func(m *MockClientConn)
@@ -97,11 +97,10 @@ func TestConnectionHandler_Handle(t *testing.T) {
 					m.On("Close").Return(nil).Once()
 				},
 				pubSub: func(m *MockPubSubConn) {
-					m.On("UnsubAll", expectedClient).Return().Once()
+					m.On("UnsubAll", expectedRemote).Return().Once()
 				},
 				connReader: func(m *MockConnReader) {
 					m.On("Read").Return().Once()
-					m.On("Close").Return().Once()
 				},
 				msgProc: func(m *MockMessageProcessor) {
 					m.On("Process").Return().Once()
@@ -123,11 +122,10 @@ func TestConnectionHandler_Handle(t *testing.T) {
 					m.On("Close").Return(errors.New("error")).Once()
 				},
 				pubSub: func(m *MockPubSubConn) {
-					m.On("UnsubAll", expectedClient).Return().Once()
+					m.On("UnsubAll", expectedRemote).Return().Once()
 				},
 				connReader: func(m *MockConnReader) {
 					m.On("Read").Return().Once()
-					m.On("Close").Return().Once()
 				},
 				msgProc: func(m *MockMessageProcessor) {
 					m.On("Process").Return().Once()
@@ -197,7 +195,7 @@ func Test_messageProcessor_Process(t *testing.T) {
 	type fields struct {
 		conn            func(m *MockClientConn)
 		pubSub          func(m *MockPubSubConn)
-		client          string
+		remote          string
 		data            chan []byte
 		resetInactivity chan bool
 		stopKeepAlive   chan bool
@@ -295,7 +293,7 @@ func Test_messageProcessor_Process(t *testing.T) {
 				pubSub: func(m *MockPubSubConn) {
 					m.On("Unsubscribe", "test", "127.0.0.1", 1).Return(nil).Once()
 				},
-				client:          "127.0.0.1",
+				remote:          "127.0.0.1",
 				data:            make(chan []byte),
 				resetInactivity: make(chan bool),
 				stopKeepAlive:   make(chan bool),
@@ -325,7 +323,7 @@ func Test_messageProcessor_Process(t *testing.T) {
 				pubSub: func(m *MockPubSubConn) {
 					m.On("Unsubscribe", "test", "127.0.0.1", 1).Return(errors.New("error")).Once()
 				},
-				client:          "127.0.0.1",
+				remote:          "127.0.0.1",
 				data:            make(chan []byte),
 				resetInactivity: make(chan bool),
 				stopKeepAlive:   make(chan bool),
@@ -350,7 +348,7 @@ func Test_messageProcessor_Process(t *testing.T) {
 							return h.id == 1
 						})).Return(nil).Once()
 				},
-				client:          "127.0.0.1",
+				remote:          "127.0.0.1",
 				data:            make(chan []byte),
 				resetInactivity: make(chan bool),
 				stopKeepAlive:   make(chan bool),
@@ -381,7 +379,7 @@ func Test_messageProcessor_Process(t *testing.T) {
 						}),
 					).Return(nil).Once()
 				},
-				client:          "127.0.0.1",
+				remote:          "127.0.0.1",
 				data:            make(chan []byte),
 				resetInactivity: make(chan bool),
 				stopKeepAlive:   make(chan bool),
@@ -395,7 +393,7 @@ func Test_messageProcessor_Process(t *testing.T) {
 				conn: func(m *MockClientConn) {
 					m.On("Write", []byte("-ERR should be SUB <subject> <id> [group]\n")).Return(0, nil).Once()
 				},
-				client:          "127.0.0.1",
+				remote:          "127.0.0.1",
 				data:            make(chan []byte),
 				resetInactivity: make(chan bool),
 				stopKeepAlive:   make(chan bool),
@@ -420,7 +418,7 @@ func Test_messageProcessor_Process(t *testing.T) {
 							return h.id == 1
 						})).Return(errors.New("error")).Once()
 				},
-				client:          "127.0.0.1",
+				remote:          "127.0.0.1",
 				data:            make(chan []byte),
 				resetInactivity: make(chan bool),
 				stopKeepAlive:   make(chan bool),
@@ -517,7 +515,7 @@ func Test_messageProcessor_Process(t *testing.T) {
 			m := &messageProcessor{
 				conn:            mockClientConn,
 				pubSub:          mockPubSub,
-				client:          tt.fields.client,
+				remote:          tt.fields.remote,
 				data:            tt.fields.data,
 				resetInactivity: tt.fields.resetInactivity,
 				stopKeepAlive:   tt.fields.stopKeepAlive,

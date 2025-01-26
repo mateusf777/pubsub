@@ -14,7 +14,6 @@ import (
 // Run stars to listen in the given address
 // Ex: server.Run("localhost:9999")
 func Run(address string) {
-	//core.SetLogLevel(slog.LevelInfo)
 
 	l, err := net.Listen("tcp4", address)
 	if err != nil {
@@ -93,7 +92,7 @@ func buildConnHandlerConfig(conn ClientConn, ps PubSubConn) (ConnectionHandlerCo
 	// Creates the keep alive
 	ka, err := core.NewKeepAlive(core.KeepAliveConfig{
 		Writer:          conn,
-		Client:          conn.RemoteAddr().String(),
+		Remote:          conn.RemoteAddr().String(),
 		CloseHandler:    closeCh,
 		ResetInactivity: resetCh,
 		StopKeepAlive:   stopCh,
@@ -107,7 +106,7 @@ func buildConnHandlerConfig(conn ClientConn, ps PubSubConn) (ConnectionHandlerCo
 	mp := &messageProcessor{
 		conn:            conn,
 		pubSub:          ps,
-		client:          conn.RemoteAddr().String(),
+		remote:          conn.RemoteAddr().String(),
 		data:            dataCh,
 		resetInactivity: resetCh,
 		stopKeepAlive:   stopCh,

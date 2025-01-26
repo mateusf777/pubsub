@@ -11,7 +11,7 @@ import (
 	"github.com/mateusf777/pubsub/core"
 )
 
-// ClientConn wraps network client connection.
+// ClientConn wraps network remote connection.
 type ClientConn interface {
 	net.Conn
 }
@@ -22,11 +22,11 @@ type PubSubConn interface {
 	Stop()
 	// Publish message to subject handlers.
 	Publish(subject string, data []byte, opts ...PubOpt)
-	// Subscribe a client handler to a subject.
+	// Subscribe a remote handler to a subject.
 	Subscribe(subject string, client string, handler Handler, opts ...SubOpt) error
-	// Unsubscribe a client handler from a subject.
+	// Unsubscribe a remote handler from a subject.
 	Unsubscribe(subject string, client string, id int) error
-	// UnsubAll client handlers.
+	// UnsubAll remote handlers.
 	UnsubAll(client string)
 	// run the engine.
 	run()
@@ -37,7 +37,6 @@ type PubSubConn interface {
 // ConnReader decouples core.ConnectionReader from ConnectionHandler.
 type ConnReader interface {
 	Read()
-	Close()
 }
 
 // MessageProcessor decouples messageProcessor from ConnectionHandler.
@@ -63,7 +62,7 @@ type ConnectionHandlerConfig struct {
 	CloseHandler    chan bool
 }
 
-// ConnectionHandler handles an accepted client connection.
+// ConnectionHandler handles an accepted remote connection.
 type ConnectionHandler struct {
 	conn            ClientConn
 	pubSub          PubSubConn
@@ -92,7 +91,7 @@ func NewConnectionHandler(cfg ConnectionHandlerConfig) *ConnectionHandler {
 	}
 }
 
-// Handle the client connection
+// Handle the remote connection
 func (h *ConnectionHandler) Handle() {
 	// Cleanup resources
 	defer h.Close()
@@ -110,17 +109,14 @@ func (h *ConnectionHandler) Handle() {
 
 // Close cleanup ConnectionHandler resources
 func (h *ConnectionHandler) Close() {
-	// Removes all client subscribers from pubSub engine.
+	// Removes all remote subscribers from pubSub engine.
 	h.pubSub.UnsubAll(h.conn.RemoteAddr().String())
 
-	// Close the connection with the client
+	// Close the connection with the remote
 	err := h.conn.Close()
 	if err != nil {
 		slog.Error("Server.handleConnection", "error", err)
 	}
-
-	// Close reader
-	h.connReader.Close()
 
 	// Close all channels
 	close(h.closeHandler)
@@ -134,19 +130,19 @@ func (h *ConnectionHandler) Close() {
 type messageProcessor struct {
 	conn            ClientConn
 	pubSub          PubSubConn
-	client          string
+	remote          string
 	data            chan []byte
 	resetInactivity chan bool
 	stopKeepAlive   chan bool
 	closeHandler    chan bool
 }
 
-// Process waits for a client message, verifies and dispatches it to the appropriated handler, and writes the response to the connection.
+// Process waits for a remote message, verifies and dispatches it to the appropriated handler, and writes the response to the connection.
 func (m *messageProcessor) Process() {
 
 loop:
 	for netData := range m.data {
-		// If receive data from client, reset keep-alive
+		// If receive data from remote, reset keep-alive
 		m.resetInactivity <- true
 
 		data := bytes.TrimSpace(netData)
@@ -155,8 +151,8 @@ loop:
 		switch {
 		// STOP
 		case bytes.Equal(bytes.ToUpper(data), core.OpStop), bytes.Equal(data, core.ControlC):
-			slog.Info("Closing connection", "remote", m.client)
-			// If client send STOP we close resources
+			slog.Info("Closing connection", "remote", m.remote)
+			// If remote send STOP we close resources
 			m.stopKeepAlive <- true
 			m.closeHandler <- true
 			break loop
@@ -176,11 +172,11 @@ loop:
 		// SUB
 		case bytes.HasPrefix(bytes.ToUpper(data), core.OpSub):
 			slog.Debug("sub", "value", data)
-			result = handleSub(m.conn, m.pubSub, m.client, data)
+			result = handleSub(m.conn, m.pubSub, m.remote, data)
 
 		// UNSUB
 		case bytes.HasPrefix(bytes.ToUpper(data), core.OpUnsub):
-			result = handleUnsub(m.pubSub, m.client, data)
+			result = handleUnsub(m.pubSub, m.remote, data)
 
 		// NO DATA
 		case bytes.Equal(data, core.Empty):
@@ -232,7 +228,7 @@ func handlePub(pubSub PubSubConn, received []byte, dataCh <-chan []byte) []byte 
 }
 
 // handleUnsub Handles UNSUB. See core.OpUnsub.
-func handleUnsub(pubSub PubSubConn, client string, received []byte) []byte {
+func handleUnsub(pubSub PubSubConn, remote string, received []byte) []byte {
 	// Default result
 	result := core.OK
 
@@ -244,7 +240,7 @@ func handleUnsub(pubSub PubSubConn, client string, received []byte) []byte {
 	id, _ := strconv.Atoi(string(args[2]))
 
 	// Dispatch
-	err := pubSub.Unsubscribe(string(args[1]), client, id)
+	err := pubSub.Unsubscribe(string(args[1]), remote, id)
 	if err != nil {
 		return core.BuildBytes(core.OpERR, core.Space, []byte(err.Error()))
 	}
@@ -252,7 +248,7 @@ func handleUnsub(pubSub PubSubConn, client string, received []byte) []byte {
 }
 
 // handleSub Handles SUB. See core.OpSub.
-func handleSub(conn ClientConn, pubSub PubSubConn, client string, received []byte) []byte {
+func handleSub(conn ClientConn, pubSub PubSubConn, remote string, received []byte) []byte {
 	// Default result
 	result := core.OK
 
@@ -273,7 +269,7 @@ func handleSub(conn ClientConn, pubSub PubSubConn, client string, received []byt
 	opts = append(opts, WithID(subID))
 
 	// Dispatch
-	err := pubSub.Subscribe(string(args[1]), client, subscriberHandler(conn, subID), opts...)
+	err := pubSub.Subscribe(string(args[1]), remote, subscriberHandler(conn, subID), opts...)
 	if err != nil {
 		return core.BuildBytes(core.OpERR, core.Space, []byte(err.Error()))
 	}
@@ -290,7 +286,7 @@ func subscriberHandler(conn ClientConn, sid int) Handler {
 	}
 }
 
-// sendMsg sends MSG back to client. See core.OpMsg.
+// sendMsg sends MSG back to remote. See core.OpMsg.
 func sendMsg(conn ClientConn, sid int, msg Message) error {
 
 	subID := strconv.AppendInt([]byte{}, int64(sid), 10)

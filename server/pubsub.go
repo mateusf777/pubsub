@@ -123,10 +123,10 @@ func WithID(id int) SubOpt {
 // Subscribe register the subject subscribers received in a SUB op
 func (ps *PubSub) Subscribe(subject string, client string, handler Handler, opts ...SubOpt) error {
 	if subject == "" || client == "" || handler == nil {
-		return fmt.Errorf("invalid parameters, subject, client and handler need to be given")
+		return fmt.Errorf("invalid parameters, subject, remote and handler need to be given")
 	}
 
-	slog.Debug("Subscribing", "subject", subject, "client", client)
+	slog.Debug("Subscribing", "subject", subject, "remote", client)
 
 	if _, ok := ps.handlersMap.Load(subject); !ok {
 		ps.handlersMap.Store(subject, make([]HandlerSubject, 0))
@@ -150,7 +150,7 @@ func (ps *PubSub) Subscribe(subject string, client string, handler Handler, opts
 // Unsubscribe removes the subject subscribers received in a UNSUB op
 func (ps *PubSub) Unsubscribe(subject string, client string, id int) error {
 	if subject == "" || client == "" {
-		return fmt.Errorf("invalid parameters, subject, client and id need to be given")
+		return fmt.Errorf("invalid parameters, subject, remote and id need to be given")
 	}
 	if _, ok := ps.handlersMap.Load(subject); !ok {
 		return fmt.Errorf("there's no subscribers for subject[%s]", subject)

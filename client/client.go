@@ -88,7 +88,7 @@ func Connect(address string) (*Conn, error) {
 
 	keepAlive, err := core.NewKeepAlive(core.KeepAliveConfig{
 		Writer:          conn,
-		Client:          conn.RemoteAddr().String(),
+		Remote:          conn.RemoteAddr().String(),
 		ResetInactivity: resetInactivity,
 		StopKeepAlive:   stopKeepAlive,
 		CloseHandler:    closeHandler,

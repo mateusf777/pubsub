@@ -293,7 +293,7 @@ func TestPubSub_Subscribe(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "Subscribe without client",
+			name: "Subscribe without remote",
 			fields: fields{
 				msgCh:       make(chan Message),
 				handlersMap: new(sync.Map),
@@ -385,7 +385,7 @@ func TestPubSub_Unsubscribe(t *testing.T) {
 			wantErr: assert.Error,
 		},
 		{
-			name: "Unsubscribe without client",
+			name: "Unsubscribe without remote",
 			fields: fields{
 				msgCh:       make(chan Message),
 				handlersMap: handlers,
@@ -487,7 +487,7 @@ func TestPubSub_UnsubAll(t *testing.T) {
 			verify: true,
 		},
 		{
-			name: "UnsubAll but client has no handlers stored",
+			name: "UnsubAll but remote has no handlers stored",
 			fields: fields{
 				msgCh:       make(chan Message),
 				handlersMap: new(sync.Map),
