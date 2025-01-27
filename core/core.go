@@ -3,21 +3,13 @@ package core
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
 	"os"
-	"strings"
 	"time"
 )
-
-type Reader interface {
-	io.Reader
-}
-
-type Writer interface {
-	io.Writer
-}
 
 const (
 	IdleTimeout = 5 * time.Second
@@ -100,6 +92,18 @@ var (
 	Ping     = BuildBytes(OpPing, CRLF)
 )
 
+type ConnReader interface {
+	Read()
+}
+
+type MsgProcessor interface {
+	Process(ctx context.Context)
+}
+
+type KeepAliveEngine interface {
+	Run(ctx context.Context)
+}
+
 type ConnectionHandlerConfig struct {
 	Conn        net.Conn
 	MsgHandler  MessageHandler
@@ -109,16 +113,21 @@ type ConnectionHandlerConfig struct {
 
 type ConnectionHandler struct {
 	conn         net.Conn
-	reader       *ConnectionReader
-	msgProcessor *MessageProcessor
-	keepAlive    *KeepAlive
+	reader       ConnReader
+	msgProcessor MsgProcessor
+	keepAlive    KeepAliveEngine
 	isClient     bool
 	data         chan []byte
 	activity     chan struct{}
 	close        chan struct{}
 }
 
-func NewConnectionHandler(cfg ConnectionHandlerConfig) *ConnectionHandler {
+func NewConnectionHandler(cfg ConnectionHandlerConfig) (*ConnectionHandler, error) {
+
+	if cfg.Conn == nil || cfg.MsgHandler == nil {
+		return nil, errors.New("the attributes Conn and MsgHandler are required")
+	}
+
 	data := make(chan []byte)
 	activity := make(chan struct{})
 	closeHandler := make(chan struct{})
@@ -159,7 +168,7 @@ func NewConnectionHandler(cfg ConnectionHandlerConfig) *ConnectionHandler {
 		data:         data,
 		activity:     activity,
 		close:        closeHandler,
-	}
+	}, nil
 }
 
 func (ch *ConnectionHandler) Handle() {
@@ -211,8 +220,7 @@ func (ch *ConnectionHandler) Close() {
 func (ch *ConnectionHandler) waitServerClose(ctx context.Context) {
 	l := logger.With("location", "Conn.waitServerClose()")
 
-	ticker := time.NewTimer(100 * time.Millisecond)
-
+	ticker := time.NewTicker(250 * time.Millisecond)
 	buf := make([]byte, 8)
 loop:
 	for {
@@ -220,11 +228,13 @@ loop:
 		case <-ticker.C:
 			_, err := ch.conn.Read(buf)
 			if err == nil {
+				l.Debug("Not disconnected yet")
 				continue
 			}
-			l.Info("Read", "error", err)
+			l.Debug("Read", "error", err)
 			break loop
 		case <-ctx.Done():
+			l.Debug("Done")
 			break loop
 		}
 	}
@@ -234,7 +244,7 @@ loop:
 
 // ConnectionReader implements Read.
 type ConnectionReader struct {
-	reader   Reader
+	reader   io.Reader
 	buffer   []byte
 	dataCh   chan<- []byte
 	activity chan<- struct{}
@@ -248,7 +258,7 @@ func (cr *ConnectionReader) Read() {
 		n, err := cr.reader.Read(cr.buffer)
 		if err != nil {
 
-			if strings.Contains(err.Error(), ClosedErr) {
+			if errors.Is(err, net.ErrClosed) {
 				l.Info("Connection closed")
 				break
 			}
@@ -291,10 +301,11 @@ type MessageProcessor struct {
 }
 
 func (m *MessageProcessor) Process(ctx context.Context) {
-	//l := logger.With("location", "MessageProcessor.Process()")
+	l := logger.With("location", "MessageProcessor.Process()")
 	for {
 		select {
 		case <-ctx.Done():
+			l.Info("MessageProcessor Done", "remote", m.remote)
 			return
 		case data := <-m.data:
 			m.handler(m.writer, data, m.data, m.close)
@@ -304,7 +315,7 @@ func (m *MessageProcessor) Process(ctx context.Context) {
 
 // KeepAliveConfig configuration for the keep-alive mechanism
 type KeepAliveConfig struct {
-	Writer      Writer
+	Writer      io.Writer
 	Remote      string
 	Activity    <-chan struct{}
 	Close       chan<- struct{}
@@ -313,7 +324,7 @@ type KeepAliveConfig struct {
 
 // KeepAlive can run a keep-alive mechanism for a connection between PubSub server and client.
 type KeepAlive struct {
-	writer      Writer
+	writer      io.Writer
 	remote      string
 	activity    <-chan struct{}
 	close       chan<- struct{}

@@ -10,3 +10,21 @@ packages:
   github.com/mateusf777/pubsub/core:
       config:
         recursive: True
+  net:
+    config:
+      all: False
+      inpackage: False
+      outpkg: core
+      dir: .
+    interfaces:
+      Conn:
+
+  io:
+    config:
+      all: False
+      inpackage: False
+      outpkg: core
+      dir: .
+    interfaces:
+      Reader:
+      Writer:
