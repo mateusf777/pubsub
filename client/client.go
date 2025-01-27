@@ -52,11 +52,14 @@ func Connect(address string) (*Client, error) {
 
 	rt := newMsgRouter()
 
-	connHandler := core.NewConnectionHandler(core.ConnectionHandlerConfig{
+	connHandler, err := core.NewConnectionHandler(core.ConnectionHandlerConfig{
 		Conn:       conn,
 		MsgHandler: MessageHandler(rt),
 		IsClient:   true,
 	})
+	if err != nil {
+		return nil, err
+	}
 
 	client := &Client{
 		connHandler: connHandler,

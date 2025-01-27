@@ -52,10 +52,14 @@ func acceptClients(l net.Listener) {
 			return
 		}
 
-		ch := core.NewConnectionHandler(core.ConnectionHandlerConfig{
+		ch, err := core.NewConnectionHandler(core.ConnectionHandlerConfig{
 			Conn:       c,
 			MsgHandler: MessageHandler(ps, c.RemoteAddr().String()),
 		})
+		if err != nil {
+			slog.Error("NewConnectionHandler", "error", err)
+			return
+		}
 
 		serverConnHandler := &ConnHandler{
 			connHandler: ch,
