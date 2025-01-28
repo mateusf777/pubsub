@@ -1,6 +1,8 @@
 package core
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -351,6 +353,137 @@ func TestConnectionReader_Read(t *testing.T) {
 			wgR.Wait()
 			_ = testWriter.CloseWithError(tt.closeWithError)
 			wgP.Wait()
+		})
+	}
+}
+
+func TestMessageProcessor_Process(t *testing.T) {
+
+	testWriter := NewMockWriter(t)
+
+	testHandler := func(writer io.Writer, data []byte, dataCh <-chan []byte, close chan<- struct{}) {
+		assert.NotNil(t, writer)
+		assert.NotNil(t, data)
+		assert.NotNil(t, dataCh)
+		assert.NotNil(t, close)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	data := make(chan []byte)
+	closeCh := make(chan struct{})
+
+	m := &MessageProcessor{
+		writer:  testWriter,
+		handler: testHandler,
+		remote:  expectedRemote.String(),
+		data:    data,
+		close:   closeCh,
+	}
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		m.Process(ctx)
+	}()
+
+	data <- OpPing
+
+	time.AfterFunc(10*time.Millisecond, func() {
+		cancel()
+	})
+
+	wg.Wait()
+
+}
+
+func TestKeepAlive_Run(t *testing.T) {
+	tests := []struct {
+		name string
+		test func(readCloser *io.PipeWriter, activity chan struct{}, cancel context.CancelFunc)
+	}{
+		{
+			name: "KeepAlive Canceled",
+			test: func(_ *io.PipeWriter, activity chan struct{}, cancel context.CancelFunc) {
+				time.AfterFunc(10*time.Millisecond, func() {
+					activity <- struct{}{}
+				})
+
+				time.AfterFunc(20*time.Millisecond, func() {
+					cancel()
+				})
+			},
+		},
+		{
+			name: "KeepAlive Writer Closed With Error",
+			test: func(writeCloser *io.PipeWriter, activity chan struct{}, cancel context.CancelFunc) {
+				time.AfterFunc(10*time.Millisecond, func() {
+					activity <- struct{}{}
+				})
+
+				time.AfterFunc(20*time.Millisecond, func() {
+					_ = writeCloser.CloseWithError(io.ErrClosedPipe)
+				})
+			},
+		},
+		{
+			name: "KeepAlive Timed out",
+			test: func(writeCloser *io.PipeWriter, activity chan struct{}, cancel context.CancelFunc) {
+				//time.AfterFunc(10*time.Millisecond, func() {
+				//	activity <- struct{}{}
+				//})
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			SetLogLevel(slog.LevelDebug)
+			defer SetLogLevel(slog.LevelError)
+
+			testReader, testWriter := io.Pipe()
+
+			activity := make(chan struct{})
+			closeCh := make(chan struct{})
+
+			keepAlive := &KeepAlive{
+				writer:      testWriter,
+				remote:      expectedRemote.String(),
+				activity:    activity,
+				close:       closeCh,
+				idleTimeout: 10 * time.Millisecond,
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			buffer := make([]byte, 1024)
+			go func() {
+				for {
+					n, err := testReader.Read(buffer)
+					if err != nil {
+						return
+					}
+					t.Log(buffer[:n])
+					assert.True(t, bytes.Equal(Ping, buffer[:n]))
+				}
+			}()
+
+			go func() {
+				<-closeCh
+			}()
+
+			wg := sync.WaitGroup{}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				keepAlive.Run(ctx)
+			}()
+
+			tt.test(testWriter, activity, cancel)
+
+			wg.Wait()
 		})
 	}
 }

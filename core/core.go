@@ -313,15 +313,6 @@ func (m *MessageProcessor) Process(ctx context.Context) {
 	}
 }
 
-// KeepAliveConfig configuration for the keep-alive mechanism
-type KeepAliveConfig struct {
-	Writer      io.Writer
-	Remote      string
-	Activity    <-chan struct{}
-	Close       chan<- struct{}
-	IdleTimeout time.Duration
-}
-
 // KeepAlive can run a keep-alive mechanism for a connection between PubSub server and client.
 type KeepAlive struct {
 	writer      io.Writer
@@ -360,7 +351,7 @@ loop:
 			}
 
 			l.Debug("Send PING", "remote", k.remote)
-			_, err := k.writer.Write(BuildBytes(OpPing, CRLF))
+			_, err := k.writer.Write(Ping)
 			if err != nil {
 				l.Info("net.Conn Write, closing...", "error", err)
 				k.close <- struct{}{}
