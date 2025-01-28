@@ -147,8 +147,7 @@ func handleUnsub(pubSub PubSubConn, remote string, received []byte) []byte {
 	id, _ := strconv.Atoi(string(args[2]))
 
 	// Dispatch
-	err := pubSub.Unsubscribe(string(args[1]), remote, id)
-	if err != nil {
+	if err := pubSub.Unsubscribe(string(args[1]), remote, id); err != nil {
 		return core.BuildBytes(core.OpERR, core.Space, []byte(err.Error()))
 	}
 	return result
