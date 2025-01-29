@@ -18,13 +18,3 @@ packages:
       dir: .
     interfaces:
       Conn:
-
-  io:
-    config:
-      all: False
-      inpackage: False
-      outpkg: core
-      dir: .
-    interfaces:
-      Reader:
-      Writer:

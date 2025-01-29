@@ -27,6 +27,11 @@ type router interface {
 	removeSubHandler(subscriberID int)
 }
 
+type ConnectionHandler interface {
+	Handle()
+	Close()
+}
+
 var logger *slog.Logger
 
 func SetLogLevel(level slog.Level) {
@@ -73,7 +78,7 @@ func Connect(address string) (*Client, error) {
 }
 
 type Client struct {
-	connHandler *core.ConnectionHandler
+	connHandler ConnectionHandler
 	writer      io.Writer
 	router      router
 	nextReply   int
@@ -86,7 +91,7 @@ func (c *Client) Close() {
 // Publish sends a message for a subject
 // Uses command PUB <subject> \n\r message \n\r
 func (c *Client) Publish(subject string, msg []byte) error {
-	result := bytes.Join([][]byte{core.OpPub, core.Space, []byte(subject), core.CRLF, msg, core.CRLF}, nil)
+	result := core.BuildBytes(core.OpPub, core.Space, []byte(subject), core.CRLF, msg, core.CRLF)
 	logger.Debug(string(result))
 
 	if _, err := c.writer.Write(result); err != nil {
@@ -103,7 +108,7 @@ func (c *Client) Subscribe(subject string, handler Handler) (int, error) {
 
 	subIDBytes := strconv.AppendInt([]byte{}, int64(subscriberID), 10)
 
-	result := bytes.Join([][]byte{core.OpSub, core.Space, []byte(subject), core.Space, subIDBytes, core.CRLF}, nil)
+	result := core.BuildBytes(core.OpSub, core.Space, []byte(subject), core.Space, subIDBytes, core.CRLF)
 	logger.Debug(string(result))
 
 	if _, err := c.writer.Write(result); err != nil {

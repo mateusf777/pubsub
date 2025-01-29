@@ -359,7 +359,7 @@ func TestConnectionReader_Read(t *testing.T) {
 
 func TestMessageProcessor_Process(t *testing.T) {
 
-	testWriter := NewMockWriter(t)
+	testWriter := &bytes.Buffer{}
 
 	testHandler := func(writer io.Writer, data []byte, dataCh <-chan []byte, close chan<- struct{}) {
 		assert.NotNil(t, writer)
