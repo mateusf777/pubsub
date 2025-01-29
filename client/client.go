@@ -1,7 +1,6 @@
 package client
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -92,7 +91,7 @@ func (c *Client) Close() {
 // Uses command PUB <subject> \n\r message \n\r
 func (c *Client) Publish(subject string, msg []byte) error {
 	result := core.BuildBytes(core.OpPub, core.Space, []byte(subject), core.CRLF, msg, core.CRLF)
-	logger.Debug(string(result))
+	logger.Debug("Publish", "result", string(result))
 
 	if _, err := c.writer.Write(result); err != nil {
 		return fmt.Errorf("client Publish, %v", err)
@@ -109,7 +108,7 @@ func (c *Client) Subscribe(subject string, handler Handler) (int, error) {
 	subIDBytes := strconv.AppendInt([]byte{}, int64(subscriberID), 10)
 
 	result := core.BuildBytes(core.OpSub, core.Space, []byte(subject), core.Space, subIDBytes, core.CRLF)
-	logger.Debug(string(result))
+	logger.Debug("Subscribe", "result", string(result))
 
 	if _, err := c.writer.Write(result); err != nil {
 		return -1, fmt.Errorf("client Subscribe, %v", err)
@@ -125,8 +124,8 @@ func (c *Client) Unsubscribe(subscriberID int) error {
 
 	subIDBytes := strconv.AppendInt([]byte{}, int64(subscriberID), 10)
 
-	result := bytes.Join([][]byte{core.OpUnsub, core.Space, subIDBytes, core.CRLF}, nil)
-	logger.Debug(string(result))
+	result := core.BuildBytes(core.OpUnsub, core.Space, subIDBytes, core.CRLF)
+	logger.Debug("Unsubscribe", "result", string(result))
 
 	if _, err := c.writer.Write(result); err != nil {
 		return fmt.Errorf("client Unsubscribe, %v", err)
@@ -142,8 +141,8 @@ func (c *Client) QueueSubscribe(subject string, queue string, handler Handler) (
 
 	subIDBytes := strconv.AppendInt([]byte{}, int64(subscriberID), 10)
 
-	result := bytes.Join([][]byte{core.OpSub, core.Space, []byte(subject), core.Space, subIDBytes, core.Space, []byte(queue), core.CRLF}, nil)
-	logger.Debug(string(result))
+	result := core.BuildBytes(core.OpSub, core.Space, []byte(subject), core.Space, subIDBytes, core.Space, []byte(queue), core.CRLF)
+	logger.Debug("QueueSubscribe", "result", string(result))
 
 	if _, err := c.writer.Write(result); err != nil {
 		return -1, fmt.Errorf("client QueueSubscribe, %v", err)
@@ -175,7 +174,7 @@ func (c *Client) RequestWithCtx(ctx context.Context, subject string, msg []byte)
 		return nil, fmt.Errorf("client RequestWithCtx, %v", err)
 	}
 
-	result := bytes.Join([][]byte{core.OpPub, core.Space, []byte(subject), core.Space, reply, core.CRLF, msg, core.CRLF}, nil)
+	result := core.BuildBytes(core.OpPub, core.Space, []byte(subject), core.Space, reply, core.CRLF, msg, core.CRLF)
 	l.Debug(string(result))
 
 	if _, err := c.writer.Write(result); err != nil {

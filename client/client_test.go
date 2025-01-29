@@ -1,6 +1,7 @@
 package client
 
 import (
+	"fmt"
 	"github.com/mateusf777/pubsub/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -147,6 +148,160 @@ func TestClient_Subscribe(t *testing.T) {
 				router: mockRouter,
 			}
 			got, err := c.Subscribe(tt.args.subject, tt.args.handler)
+			if !tt.wantErr(t, err) {
+				return
+			}
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestClient_Unsubscribe(t *testing.T) {
+	type fields struct {
+		reader func(r *io.PipeReader)
+		router func(m *Mockrouter)
+	}
+	type args struct {
+		subscriberID int
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name: "Unsubscribe",
+			fields: fields{
+				reader: func(r *io.PipeReader) {
+					buf := make([]byte, 1024)
+					n, _ := r.Read(buf)
+					assert.Equal(t, core.BuildBytes(core.OpUnsub, core.Space, []byte("1"), core.CRLF), buf[:n])
+				},
+				router: func(m *Mockrouter) {
+					m.On("removeSubHandler", 1).Return().Once()
+				},
+			},
+			args: args{
+				subscriberID: 1,
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "Unsubscribe with error",
+			fields: fields{
+				reader: func(r *io.PipeReader) {
+					_ = r.Close()
+				},
+				router: func(m *Mockrouter) {
+					m.On("removeSubHandler", 1).Return().Once()
+				},
+			},
+			args: args{
+				subscriberID: 1,
+			},
+			wantErr: assert.Error,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testReader, testWriter := io.Pipe()
+			mockRouter := NewMockrouter(t)
+
+			if tt.fields.reader != nil {
+				go tt.fields.reader(testReader)
+			}
+
+			if tt.fields.router != nil {
+				tt.fields.router(mockRouter)
+			}
+
+			c := &Client{
+				writer: testWriter,
+				router: mockRouter,
+			}
+
+			tt.wantErr(t, c.Unsubscribe(tt.args.subscriberID), fmt.Sprintf("Unsubscribe(%v)", tt.args.subscriberID))
+		})
+	}
+}
+
+func TestClient_QueueSubscribe(t *testing.T) {
+	type fields struct {
+		reader func(r *io.PipeReader)
+		router func(m *Mockrouter)
+	}
+	type args struct {
+		subject string
+		queue   string
+		handler Handler
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    int
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name: "QueueSubscribe",
+			fields: fields{
+				reader: func(r *io.PipeReader) {
+					buf := make([]byte, 1024)
+					n, _ := r.Read(buf)
+					assert.Equal(t, core.BuildBytes(core.OpSub, core.Space, []byte("test"), core.Space, []byte("1"), core.Space, []byte("test"), core.CRLF), buf[:n])
+				},
+				router: func(m *Mockrouter) {
+					m.On("addSubHandler", mock.MatchedBy(func(h Handler) bool {
+						msg := &Message{Subject: "test", Data: []byte("test")}
+						h(msg)
+						return true
+					})).Return(1).Once()
+				},
+			},
+			args: args{
+				subject: "test",
+				queue:   "test",
+				handler: func(message *Message) {
+					assert.Equal(t, message.Subject, "test")
+					assert.Equal(t, message.Data, []byte("test"))
+				},
+			},
+			want:    1,
+			wantErr: assert.NoError,
+		},
+		{
+			name: "QueueSubscribe with error",
+			fields: fields{
+				reader: func(r *io.PipeReader) {
+					_ = r.Close()
+				},
+				router: func(m *Mockrouter) {
+					m.On("addSubHandler", mock.Anything).Return(1).Once()
+				},
+			},
+			want:    -1,
+			wantErr: assert.Error,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testReader, testWriter := io.Pipe()
+			mockRouter := NewMockrouter(t)
+
+			if tt.fields.reader != nil {
+				go tt.fields.reader(testReader)
+			}
+
+			if tt.fields.router != nil {
+				tt.fields.router(mockRouter)
+			}
+
+			c := &Client{
+				writer: testWriter,
+				router: mockRouter,
+			}
+			got, err := c.QueueSubscribe(tt.args.subject, tt.args.queue, tt.args.handler)
 			if !tt.wantErr(t, err) {
 				return
 			}
