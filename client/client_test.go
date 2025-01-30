@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"io"
 	"testing"
+	"time"
 )
 
 func TestClient_Close(t *testing.T) {
@@ -306,6 +307,86 @@ func TestClient_QueueSubscribe(t *testing.T) {
 				return
 			}
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestClient_Request(t *testing.T) {
+	type fields struct {
+		reader func(r *io.PipeReader)
+		router func(m *Mockrouter)
+	}
+	type args struct {
+		subject string
+		msg     []byte
+		handler Handler
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    *Message
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name: "Request",
+			fields: fields{
+				reader: func(r *io.PipeReader) {
+					buf := make([]byte, 1024)
+					n, _ := r.Read(buf)
+					assert.Equal(t, core.BuildBytes(core.OpSub, core.Space, []byte("REPLY.1"), core.Space, []byte("1"), core.CRLF), buf[:n])
+
+					n, _ = r.Read(buf)
+					assert.Equal(t, core.BuildBytes(core.OpPub, core.Space, []byte("test"), core.Space, []byte("REPLY.1"), core.CRLF, []byte("test"), core.CRLF), buf[:n])
+
+					n, _ = r.Read(buf)
+					assert.Equal(t, core.BuildBytes(core.OpUnsub, core.Space, []byte("1"), core.CRLF), buf[:n])
+				},
+				router: func(m *Mockrouter) {
+					m.On("addSubHandler", mock.MatchedBy(func(h Handler) bool {
+						go time.AfterFunc(50*time.Millisecond, func() {
+							msg := &Message{Subject: "test", Data: []byte("test")}
+							h(msg)
+						})
+						return true
+					})).Return(1).Once()
+					m.On("removeSubHandler", 1).Return().Once()
+				},
+			},
+			args: args{
+				subject: "test",
+				msg:     []byte("test"),
+			},
+			want: &Message{
+				Subject: "test",
+				Data:    []byte("test"),
+			},
+			wantErr: assert.NoError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testReader, testWriter := io.Pipe()
+			mockRouter := NewMockrouter(t)
+
+			if tt.fields.reader != nil {
+				go tt.fields.reader(testReader)
+			}
+
+			if tt.fields.router != nil {
+				tt.fields.router(mockRouter)
+			}
+
+			c := &Client{
+				writer: testWriter,
+				router: mockRouter,
+			}
+
+			got, err := c.Request(tt.args.subject, tt.args.msg)
+			if !tt.wantErr(t, err, fmt.Sprintf("Request(%v, %v)", tt.args.subject, tt.args.msg)) {
+				return
+			}
+			assert.Equalf(t, tt.want, got, "Request(%v, %v)", tt.args.subject, tt.args.msg)
 		})
 	}
 }

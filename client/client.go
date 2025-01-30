@@ -175,7 +175,7 @@ func (c *Client) RequestWithCtx(ctx context.Context, subject string, msg []byte)
 	}
 
 	result := core.BuildBytes(core.OpPub, core.Space, []byte(subject), core.Space, reply, core.CRLF, msg, core.CRLF)
-	l.Debug(string(result))
+	l.Debug("RequestWithCtx", "result", string(result))
 
 	if _, err := c.writer.Write(result); err != nil {
 		return nil, fmt.Errorf("client Request PUB, %v", err)
