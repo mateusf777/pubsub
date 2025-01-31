@@ -22,7 +22,7 @@ func MessageHandler(router router) core.MessageHandler {
 		var result []byte
 		switch {
 		case bytes.Equal(bytes.ToUpper(data), core.OpPing):
-			result = bytes.Join([][]byte{core.OpPong, core.CRLF}, nil)
+			result = core.BuildBytes(core.OpPong, core.CRLF)
 
 		case bytes.Equal(bytes.ToUpper(data), core.OpPong):
 			return
@@ -38,6 +38,7 @@ func MessageHandler(router router) core.MessageHandler {
 			l.Debug("in opMsg...")
 			l.Debug("calling handleMsg")
 			handleMsg(router, data, dataCh)
+			return
 
 		default:
 			if bytes.Equal(data, core.Empty) {
