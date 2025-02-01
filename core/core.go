@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	IdleTimeout = 5 * time.Second
+	IdleTimeout = 60 * time.Second
 	ClosedErr   = "use of closed network connection"
 )
 
@@ -34,47 +34,47 @@ func SetLogLevel(level slog.Level) {
 
 // Protocol
 var (
-	// OpPub (PUB <subject> [reply_id] \n\r [msg] \n\r).
+	// OpPub (PUB <subject> [reply_id] \r\n [msg] \r\n).
 	// Publish a message to a subject with optional reply subject.
 	// Client -> Server
 	OpPub = []byte{'P', 'U', 'B'}
 
-	// OpSub (SUB <subject> <sub_id> [group] \n\r).
+	// OpSub (SUB <subject> <sub_id> [group] \r\n).
 	// Subscribe to a subject with optional group grouping.
 	// Client -> Server
 	OpSub = []byte{'S', 'U', 'B'}
 
-	// OpUnsub (UNSUB <sub_id> \n\r)
+	// OpUnsub (UNSUB <sub_id> \r\n)
 	// Unsubscribes from a subject
 	// Client -> Server
 	OpUnsub = []byte{'U', 'N', 'S', 'U', 'B'}
 
-	// OpStop (STOP \n\r)
+	// OpStop (STOP \r\n)
 	// Tells server to clean up connection.
 	// Client -> Server
 	OpStop = []byte{'S', 'T', 'O', 'P'}
 
-	// OpPong (PONG \n\r)
+	// OpPong (PONG \r\n)
 	// Keep-alive response
 	// Client -> Server
 	OpPong = []byte{'P', 'O', 'N', 'G'}
 
-	// OpPing (PING \n\r)
+	// OpPing (PING \r\n)
 	// Keep-alive message
 	// Server -> Client
 	OpPing = []byte{'P', 'I', 'N', 'G'}
 
-	// OpMsg (MSG <subject> <sub_id> [reply-to] \n\r [payload] \n\r)
+	// OpMsg (MSG <subject> <sub_id> [reply-to] \r\n [payload] \r\n)
 	// Delivers a message to a subscriber
 	// Server -> Client
 	OpMsg = []byte{'M', 'S', 'G'}
 
-	// OpOK (+OK \n\r)
+	// OpOK (+OK \r\n)
 	// Acknowledges protocol messages.
 	// Server -> Client
 	OpOK = []byte{'+', 'O', 'K'}
 
-	// OpERR (-ERR <error> \n\r)
+	// OpERR (-ERR <error> \r\n)
 	// Indicates protocol error.
 	// Server -> Client
 	OpERR = []byte{'-', 'E', 'R', 'R'}
@@ -155,7 +155,7 @@ func NewConnectionHandler(cfg ConnectionHandlerConfig) (*ConnectionHandler, erro
 		writer:      cfg.Conn,
 		remote:      cfg.Conn.RemoteAddr().String(),
 		activity:    activity,
-		close:       activity,
+		close:       closeHandler,
 		idleTimeout: cfg.IdleTimeout,
 	}
 
