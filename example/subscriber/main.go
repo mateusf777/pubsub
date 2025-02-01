@@ -17,9 +17,6 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
-	//client.SetLogLevel(slog.LevelDebug)
-	//core.SetLogLevel(slog.LevelDebug)
-
 	conn, err := client.Connect(":9999")
 	if err != nil {
 		slog.Error("client.Connect", "error", err)

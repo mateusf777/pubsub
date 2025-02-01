@@ -1,61 +1,135 @@
-# PUBSUB (lite/naive implementation)
+# PUBSUB
 
-The goal of this project is to learn how to implement a basic server and protocol.
-It's just another project for learning and recreational programming.
+## Overview
+This project is a **learning-oriented** implementation of a basic pub/sub server and protocol. It was developed to gain a deeper understanding of how pub/sub systems work at a fundamental level.
 
-## THERE'S NO SECURITY!!!!
+### **Disclaimer**
+This project was inspired by the [NATS protocol](https://docs.nats.io/nats-protocol/nats-protocol#protocol-messages). While it follows similar operations, it is not a replacement for NATS, nor does it aim to be production-ready. If you need a robust pub/sub system for real-world use, consider using [NATS](https://nats.io).
 
-## Disclaimer
-The protocol here is not my idea. Although, I have not copied the code, I have used the same operations from [nats protocol](https://docs.nats.io/nats-protocol/nats-protocol#protocol-messages).
-I highly recommend [nats](https://nats.io) if you need a connective technology.
+### **Security Warning**
+🚨 **This implementation is under development. Authentication and TLS security features are ongoing.** Use it for learning and experimentation only.
 
-### Build
+---
+
+## **Build Instructions**
+
+Run the following commands to build the server and example applications:
+
 ```
-go build -o ps-server         // build the pubsub server
-go build ./example/subscriber // build the subscriber example
-go build ./example/publisher  // build the publisher example
-go build ./example/request    // build the request example
-go build ./example/queue      // build the queue example
-```
+cd server
+go build -o ../build/ps-server ./cmd/pubsub
 
-### Run
+cd ../example
+go build -o ../build/queue ./queue
+go build -o ../build/subscriber ./subscriber
+go build -o ../build/publisher ./publisher
+go build -o ../build/request ./request
 
-`./ps-server`
-
-If you want to run the examples, first start subscriber in a different terminal, then the order does not matter.
-Attention!! The publisher example triggers 1000000 messages 8x concurrently as fast as it can, it will get "a bit" of cpu.
-You can adjust it in the `./example/common/common.go` and build it again: 
-```
-const (
-	Routines = 8
-	Messages = 1000000
-)
+cd ../build
 ```
 
-### Simple subscribe/publish - test with telnet
-In a terminal type
+---
+
+## **Running the Server**
+To start the pub/sub server:
+
+```
+./ps-server
+```
+
+---
+
+## **Usage Examples**
+
+### **1. Subscribe and Publish Example**
+#### Start a Subscriber
+```
+./subscriber
+```
+
+#### Send a Request from Another Terminal
+```
+./request
+```
+##### Example Output
+```
+{"time":"<timestamp>","level":"INFO","msg":"request time"}
+{"time":"<timestamp>","level":"INFO","msg":"now","data":"<formatted time>"}
+```
+
+#### Launch a Queue Subscriber
+```
+./queue
+```
+##### Example Output
+```
+{"time":"<timestamp>","level":"INFO","msg":"Launching subscribers","queue":3}
+{"time":"<timestamp>","level":"INFO","msg":"Queue, successfully subscribed","queue":0}
+{"time":"<timestamp>","level":"INFO","msg":"Queue, successfully subscribed","queue":1}
+{"time":"<timestamp>","level":"INFO","msg":"Queue, successfully subscribed","queue":2}
+...
+{"time":"<timestamp>","level":"INFO","msg":"Received all messages"}
+```
+
+#### Publish Messages
+```
+./publisher
+```
+##### Example Output
+```
+{"time":"<timestamp>","level":"INFO","msg":"Sending messages","count":10000}
+{"time":"<timestamp>","level":"INFO","msg":"Done"}
+{"time":"<timestamp>","level":"INFO","msg":"Connection closed"}
+```
+
+##### Example Output in Subscriber Terminal
+```
+{"time":"<timestamp>","level":"INFO","msg":"received","count":10000}
+```
+
+---
+
+## **2. Simple Subscribe/Publish via Telnet**
+You can interact with the pub/sub server using `telnet`.
+
+### **Start the Server**
+```
+./ps-server
+```
+
+### **Subscribe to a Topic**
 ```
 telnet localhost 9999
-``` 
-Then, type
 ```
-sub test 1                                                                      
+Then type:
 ```
-In another terminal type
+sub test 1
+```
+
+### **Publish a Message**
+Open another terminal and connect via telnet:
 ```
 telnet localhost 9999
 ```
-Then, type
+Then type:
 ```
 pub test
 test
 ```
-The first terminal should receive
+
+### **Example Output (Subscriber Terminal)**
 ```
-MSG test 1                                                                      
-test   
+MSG test 1
+test
 ```
-To quit in both terminals, type
+
+### **Stopping the Server**
+To quit in both terminals, type:
 ```
 stop
 ```
+
+---
+
+## **Final Notes**
+This project is a **learning exercise** and not meant for production.
