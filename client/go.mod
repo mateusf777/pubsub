@@ -3,7 +3,7 @@ module github.com/mateusf777/pubsub/client
 go 1.23.4
 
 require (
-	github.com/mateusf777/pubsub/core v0.1.7
+	github.com/mateusf777/pubsub/core v0.1.8
 	github.com/stretchr/testify v1.10.0
 )
 
