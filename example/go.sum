@@ -1,9 +1,9 @@
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/mateusf777/pubsub/client v0.1.6 h1:Tk1dK4+wcWChXyz7D3RuZ77JGLE1Q/G7CGUlELioOeU=
-github.com/mateusf777/pubsub/client v0.1.6/go.mod h1:kznvZpso5cFGyWt9108rStISMfKHTfK/LVesKU8cwi0=
-github.com/mateusf777/pubsub/core v0.1.7 h1:Z5eSdF+fAxfr/uH26x3txoG6xstqctGIRFCP6SnMTOA=
-github.com/mateusf777/pubsub/core v0.1.7/go.mod h1:CPnCYReXANr0PL3p9GqzQa2UYLBb3yLoOzhgPXCWVJM=
+github.com/mateusf777/pubsub/client v0.1.7 h1:UU9vtayZbx2pF/b6Lm8Gyn0DFVUAhhmlpScANla60sQ=
+github.com/mateusf777/pubsub/client v0.1.7/go.mod h1:S9ZanoXD1nPWN0i/KkVFedr1WExx2+YITjesL7O+hPw=
+github.com/mateusf777/pubsub/core v0.1.8 h1:GriqpAFM2ExNfLrng51VUqG4QwnMuXdrm9nJHKXXAs8=
+github.com/mateusf777/pubsub/core v0.1.8/go.mod h1:CPnCYReXANr0PL3p9GqzQa2UYLBb3yLoOzhgPXCWVJM=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/stretchr/objx v0.5.2 h1:xuMeJ0Sdp5ZMRXx/aWO6RZxdr3beISkG5/G/aIRr3pY=
