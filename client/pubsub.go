@@ -8,13 +8,11 @@ import (
 type Handler func(*Message)
 
 type msgRouter struct {
-	msgCh       chan *Message
 	subHandlers map[int]Handler
 }
 
 func newMsgRouter() *msgRouter {
 	return &msgRouter{
-		msgCh:       make(chan *Message),
 		subHandlers: make(map[int]Handler),
 	}
 }
