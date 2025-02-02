@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"io"
 	"log/slog"
 	"net"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 var expectedRemote = &net.IPAddr{IP: []byte{127, 0, 0, 1}}
@@ -342,10 +343,6 @@ func TestConnectionReader_Read(t *testing.T) {
 			wgP.Add(1)
 			go func() {
 				defer wgP.Done()
-
-				SetLogLevel(slog.LevelDebug)
-				defer SetLogLevel(slog.LevelError)
-
 				go cr.Read()
 			}()
 

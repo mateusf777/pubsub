@@ -64,7 +64,9 @@ func NewPubSub(cfg PubSubConfig) *PubSub {
 		router:      &msgRouter{},
 		running:     false,
 	}
+
 	go ps.run()
+	ps.running = true
 
 	return &ps
 }
@@ -72,6 +74,7 @@ func NewPubSub(cfg PubSubConfig) *PubSub {
 // Stop the PubSub router
 func (ps *PubSub) Stop() {
 	close(ps.msgCh)
+	ps.running = false
 }
 
 // PubOpt optional parameter pattern for Publish
@@ -198,11 +201,9 @@ func (ps *PubSub) UnsubAll(client string) {
 func (ps *PubSub) run() {
 
 	slog.Info("Message router started")
-	ps.running = true
 
 	defer func() {
 		slog.Info("Message router stopped")
-		ps.running = false
 	}()
 
 	for msg := range ps.msgCh {

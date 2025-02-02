@@ -45,9 +45,6 @@ func TestNewPubSub(t *testing.T) {
 			if got.handlersMap == nil {
 				t.Errorf("NewPubSub() handlers not initialized")
 			}
-			if got.running {
-				t.Errorf("PubSub already running")
-			}
 
 			timer := time.NewTimer(time.Second)
 			for {
