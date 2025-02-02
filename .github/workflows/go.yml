@@ -33,15 +33,19 @@ jobs:
 
     - name: Test
       run: >-
+        go install github.com/vektra/mockery/v2@v2.52.1 &&
         cd core &&
+        mockery &&
         go test . -cover -race -coverprofile=cover.out &&
         grep -v "mock_" cover.out > cover.tmp && mv cover.tmp cover.out &&
         go tool cover -func cover.out | grep total &&
         cd ../server &&
+        mockery &&
         go test . -cover -race -coverprofile=cover.out &&
         grep -v "mock_" cover.out > cover.tmp && mv cover.tmp cover.out &&
         go tool cover -func cover.out | grep total &&
         cd ../client &&
+        mockery &&
         go test . -cover -race -coverprofile=cover.out &&
         grep -v "mock_" cover.out > cover.tmp && mv cover.tmp cover.out &&
         go tool cover -func cover.out | grep total
