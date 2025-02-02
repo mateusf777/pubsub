@@ -1,4 +1,4 @@
-# PUBSUB
+# PUBSUB [![Go](https://github.com/mateusf777/pubsub/actions/workflows/go.yml/badge.svg)](https://github.com/mateusf777/pubsub/actions/workflows/go.yml)
 
 ## Overview
 This project is a **learning-oriented** implementation of a basic pub/sub server and protocol. It was developed to gain a deeper understanding of how pub/sub systems work at a fundamental level.
