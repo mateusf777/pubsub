@@ -328,6 +328,7 @@ func TestConnectionReader_Read(t *testing.T) {
 			go func() {
 				defer wgR.Done()
 				<-activity
+				<-activity
 			}()
 
 			wgR.Add(1)
