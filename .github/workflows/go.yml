@@ -36,16 +36,19 @@ jobs:
         go install github.com/vektra/mockery/v2@v2.52.1 &&
         cd core &&
         mockery &&
-        go test . -cover -race -coverprofile=cover.out &&
+        go test . -cover -race -coverprofile=cover.out > /dev/null &&
         grep -v "mock_" cover.out > cover.tmp && mv cover.tmp cover.out &&
+        echo "core"
         go tool cover -func cover.out | grep total &&
         cd ../server &&
         mockery &&
-        go test . -cover -race -coverprofile=cover.out &&
+        go test . -cover -race -coverprofile=cover.out > /dev/null &&
         grep -v "mock_" cover.out > cover.tmp && mv cover.tmp cover.out &&
+        echo "server"
         go tool cover -func cover.out | grep total &&
         cd ../client &&
         mockery &&
-        go test . -cover -race -coverprofile=cover.out &&
+        go test . -cover -race -coverprofile=cover.out > /dev/null &&
         grep -v "mock_" cover.out > cover.tmp && mv cover.tmp cover.out &&
+        echo "client"
         go tool cover -func cover.out | grep total
