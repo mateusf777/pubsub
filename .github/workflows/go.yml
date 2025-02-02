@@ -23,25 +23,25 @@ jobs:
 
     - name: Build
       run: >-
-        cd server
-        go build -o ../build/ps-server ./cmd/pubsub
-        cd ../example
-        go build -o ../build/queue ./queue
-        go build -o ../build/subscriber ./subscriber
-        go build -o ../build/publisher ./publisher
+        cd server &&
+        go build -o ../build/ps-server ./cmd/pubsub &&
+        cd ../example &&
+        go build -o ../build/queue ./queue &&
+        go build -o ../build/subscriber ./subscriber &&
+        go build -o ../build/publisher ./publisher &&
         go build -o ../build/request ./request
 
     - name: Test
       run: >-
-        cd core
-        go test . -cover -race -coverprofile=cover.out
-        grep -v "mock_" cover.out > cover.tmp && mv cover.tmp cover.out
-        go tool cover -func cover.out | grep total
-        cd ../server
-        go test . -cover -race -coverprofile=cover.out
-        grep -v "mock_" cover.out > cover.tmp && mv cover.tmp cover.out
-        go tool cover -func cover.out | grep total
-        cd ../client
-        go test . -cover -race -coverprofile=cover.out
-        grep -v "mock_" cover.out > cover.tmp && mv cover.tmp cover.out
+        cd core &&
+        go test . -cover -race -coverprofile=cover.out &&
+        grep -v "mock_" cover.out > cover.tmp && mv cover.tmp cover.out &&
+        go tool cover -func cover.out | grep total &&
+        cd ../server &&
+        go test . -cover -race -coverprofile=cover.out &&
+        grep -v "mock_" cover.out > cover.tmp && mv cover.tmp cover.out &&
+        go tool cover -func cover.out | grep total &&
+        cd ../client &&
+        go test . -cover -race -coverprofile=cover.out &&
+        grep -v "mock_" cover.out > cover.tmp && mv cover.tmp cover.out &&
         go tool cover -func cover.out | grep total
