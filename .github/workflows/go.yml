@@ -38,34 +38,37 @@ jobs:
       run: >-
         cd core &&
         mockery &&
-        go test . -cover -race -coverprofile=../cover-core.out -json > ../test-core.json
+        go test . -cover -race -coverprofile=./cover-core.out -json > ../test-core.json
 
     - name: Test server
       run: >-
         cd server &&
         mockery &&
-        go test . -cover -race -coverprofile=../cover-server.out -json > ../test-server.json
+        go test . -cover -race -coverprofile=./cover-server.out -json > ../test-server.json
 
     - name: Test client
       run: >-
         cd client &&
         mockery &&
-        go test . -cover -race -coverprofile=../cover-client.out -json > ../test-client.json
+        go test . -cover -race -coverprofile=./cover-client.out -json > ../test-client.json
 
     - name: Coverage core
       run: >-
+        cd core &&
         grep -v "mock_" cover-core.out > cover-core.tmp && mv cover-core.tmp cover-core.out &&
-        go tool cover -html cover-core.out -o cover-core.html
+        go tool cover -html cover-core.out -o ../cover-core.html
 
     - name: Coverage server
       run: >-
+        cd server &&
         grep -v "mock_" cover-server.out > cover-server.tmp && mv cover-server.tmp cover-server.out &&
-        go tool cover -html cover-server.out -o cover-server.html
+        go tool cover -html cover-server.out -o ../cover-server.html
 
     - name: Coverage client
       run: >-
+        cd client &&
         grep -v "mock_" cover-client.out > cover-client.tmp && mv cover-client.tmp cover-client.out &&
-        go tool cover -html cover-client.out -o cover-client.html
+        go tool cover -html cover-client.out -o ../cover-client.html
 
     - name: Upload core test results
       uses: actions/upload-artifact@v4
