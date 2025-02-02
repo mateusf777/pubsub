@@ -257,7 +257,6 @@ func (cr *ConnectionReader) Read() {
 	for {
 		n, err := cr.reader.Read(cr.buffer)
 		if err != nil {
-
 			if errors.Is(err, net.ErrClosed) {
 				l.Info("Connection closed")
 				break
@@ -265,6 +264,7 @@ func (cr *ConnectionReader) Read() {
 			l.Info("net.Conn Read", "error", err)
 			break
 		}
+		cr.activity <- struct{}{}
 
 		l.Debug("Read", "data", string(cr.buffer[:n]))
 
@@ -285,7 +285,6 @@ func (cr *ConnectionReader) Read() {
 		for _, msg := range messages {
 			l.Debug("Send msg to dataCh", "msg", string(msg))
 			cr.dataCh <- msg
-			cr.activity <- struct{}{}
 		}
 	}
 }
