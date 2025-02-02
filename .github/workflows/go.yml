@@ -31,21 +31,74 @@ jobs:
         go build -o ../build/publisher ./publisher &&
         go build -o ../build/request ./request
 
-    - name: Test
+    - name: Setup mockery
+      run: go install github.com/vektra/mockery/v2@v2.52.1
+
+    - name: Test core
       run: >-
-        go install github.com/vektra/mockery/v2@v2.52.1 &&
         cd core &&
         mockery &&
-        go test . -cover -race -coverprofile=cover.out > /dev/null &&
-        grep -v "mock_" cover.out > cover.tmp && mv cover.tmp cover.out &&
-        go tool cover -func cover.out | grep total &&
-        cd ../server &&
+        go test . -cover -race -coverprofile=../cover-core.out -json > ../test-core.json
+
+    - name: Test server
+      run: >-
+        cd server &&
         mockery &&
-        go test . -cover -race -coverprofile=cover.out > /dev/null &&
-        grep -v "mock_" cover.out > cover.tmp && mv cover.tmp cover.out &&
-        go tool cover -func cover.out | grep total &&
-        cd ../client &&
+        go test . -cover -race -coverprofile=../cover-server.out -json > ../test-server.json
+
+    - name: Test client
+      run: >-
+        cd client &&
         mockery &&
-        go test . -cover -race -coverprofile=cover.out > /dev/null &&
-        grep -v "mock_" cover.out > cover.tmp && mv cover.tmp cover.out &&
-        go tool cover -func cover.out | grep total
+        go test . -cover -race -coverprofile=../cover-client.out -json > ../test-client.json
+
+    - name: Coverage core
+      run: >-
+        grep -v "mock_" cover-core.out > cover-core.tmp && mv cover-core.tmp cover-core.out &&
+        go tool cover -html cover-core.out -o cover-core.html
+
+    - name: Coverage server
+      run: >-
+        grep -v "mock_" cover-server.out > cover-server.tmp && mv cover-server.tmp cover-server.out &&
+        go tool cover -html cover-server.out -o cover-server.html
+
+    - name: Coverage client
+      run: >-
+        grep -v "mock_" cover-client.out > cover-client.tmp && mv cover-client.tmp cover-client.out &&
+        go tool cover -html cover-client.out -o cover-client.html
+
+    - name: Upload core test results
+      uses: actions/upload-artifact@v4
+      with:
+        name: Go-test-results-core
+        path: test-core.json
+
+    - name: Upload server test results
+      uses: actions/upload-artifact@v4
+      with:
+        name: Go-test-results-server
+        path: test-server.json
+
+    - name: Upload client test results
+      uses: actions/upload-artifact@v4
+      with:
+        name: Go-test-results-client
+        path: test-client.json
+
+    - name: Upload core coverage results
+      uses: actions/upload-artifact@v4
+      with:
+        name: Go-coverage-results-core
+        path: cover-core.html
+
+    - name: Upload server coverage results
+      uses: actions/upload-artifact@v4
+      with:
+        name: Go-coverage-results-server
+        path: cover-server.html
+
+    - name: Upload client coverage results
+      uses: actions/upload-artifact@v4
+      with:
+        name: Go-coverage-results-client
+        path: cover-client.html
