@@ -107,3 +107,10 @@ jobs:
       with:
         name: Go-coverage-results-client
         path: cover-client.html
+
+    - name: Build and push
+      uses: docker/build-push-action@v6
+      with:
+        context: "{{defaultContext}}:server"
+        push: false
+        tags: pubsub:latest
