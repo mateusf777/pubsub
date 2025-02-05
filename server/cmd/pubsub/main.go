@@ -8,7 +8,7 @@ import (
 
 // ATTENTION: This server has NO SECURITY whatsoever
 // If you expose it you're on your own.
-const defaultAddress = "127.0.0.1:9999"
+const defaultAddress = "0.0.0.0:9999"
 
 func main() {
 
