@@ -108,9 +108,16 @@ jobs:
         name: Go-coverage-results-client
         path: cover-client.html
 
-    - name: Build and push
+    - name: Build container image
       uses: docker/build-push-action@v6
       with:
         context: "{{defaultContext}}:server"
         push: false
         tags: pubsub:latest
+
+    - name: Integration Tests
+      run: |
+        docker run -d --rm -p 9999:9999 --name test pubsub:latest
+        cd example/integration
+        go test .
+        docker stop test
