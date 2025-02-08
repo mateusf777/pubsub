@@ -62,9 +62,15 @@ func acceptClients(l net.Listener) {
 		}
 
 		serverConnHandler := &ConnHandler{
+			conn:        c,
 			connHandler: ch,
 			pubSub:      ps,
 			remote:      c.RemoteAddr().String(),
+		}
+
+		if err := serverConnHandler.Connect(); err != nil {
+			slog.Error("Connect", "error", err)
+			return
 		}
 		go serverConnHandler.Run()
 	}
