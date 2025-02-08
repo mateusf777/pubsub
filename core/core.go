@@ -19,6 +19,11 @@ const (
 // logger is initialized with error level for the core package.
 var logger *slog.Logger
 
+type Info struct {
+	ClientID string `json:"client_id"`
+	Nonce    string `json:"nonce"`
+}
+
 func init() {
 	logHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError})
 	logger = slog.New(logHandler)
@@ -58,6 +63,11 @@ var (
 	// Keep-alive response
 	// Client -> Server
 	OpPong = []byte{'P', 'O', 'N', 'G'}
+
+	// OpInfo (INFO {"client_id":<clientID>, "nonce":<nonce>} \r\n).
+	// Informs the clientID in the server and sends a nonce for authentication
+	// Server -> Client
+	OpInfo = []byte{'I', 'N', 'F', 'O'}
 
 	// OpPing (PING \r\n)
 	// Keep-alive message
