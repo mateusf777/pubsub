@@ -2,8 +2,13 @@ package server
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"io"
 	"log/slog"
+	"net"
 	"strconv"
 	"strings"
 
@@ -34,9 +39,41 @@ type ConnectionHandler interface {
 }
 
 type ConnHandler struct {
+	conn        net.Conn
 	connHandler ConnectionHandler
 	pubSub      PubSubConn
 	remote      string
+}
+
+func (s *ConnHandler) Connect() error {
+
+	newSha := sha256.New()
+	if _, err := newSha.Write([]byte(s.conn.RemoteAddr().String())); err != nil {
+		return err
+	}
+	hash := newSha.Sum(nil)
+
+	nonceBytes := make([]byte, 32)
+	if _, err := rand.Read(nonceBytes); err != nil {
+		slog.Error("NewConnectionHandler", "error", err)
+		return err
+	}
+
+	info := core.Info{
+		ClientID: base64.RawStdEncoding.EncodeToString(hash),
+		Nonce:    base64.RawStdEncoding.EncodeToString(nonceBytes),
+	}
+
+	infoB, err := json.Marshal(info)
+	if err != nil {
+		return err
+	}
+
+	if _, err := s.conn.Write(core.BuildBytes(core.OpInfo, core.Space, infoB, core.CRLF)); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (s *ConnHandler) Run() {
