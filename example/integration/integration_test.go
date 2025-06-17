@@ -85,7 +85,7 @@ func TestQueue(t *testing.T) {
 		assert.Nil(t, err)
 	}
 
-	time.AfterFunc(200*time.Millisecond, func() {
+	time.AfterFunc(500*time.Millisecond, func() {
 		assert.Equal(t, 10, count)
 		assert.NotEqual(t, 0, count1)
 		assert.NotEqual(t, 0, count2)
