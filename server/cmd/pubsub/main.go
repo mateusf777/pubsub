@@ -11,11 +11,17 @@ import (
 const defaultAddress = "0.0.0.0:9999"
 
 func main() {
-
 	address := os.Getenv("PUBSUB_ADDRESS")
 	if len(address) == 0 {
 		address = defaultAddress
 	}
 
-	server.Run(address)
+	certFile := os.Getenv("PUBSUB_TLS_CERT")
+	keyFile := os.Getenv("PUBSUB_TLS_KEY")
+
+	if certFile != "" && keyFile != "" {
+		server.Run(address, server.WithTLS(certFile, keyFile))
+	} else {
+		server.Run(address)
+	}
 }

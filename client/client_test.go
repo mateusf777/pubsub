@@ -3,12 +3,13 @@ package client
 import (
 	"context"
 	"fmt"
-	"github.com/mateusf777/pubsub/core"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"io"
 	"testing"
 	"time"
+
+	"github.com/mateusf777/pubsub/core"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestClient_Close(t *testing.T) {
@@ -323,7 +324,6 @@ func TestClient_Request(t *testing.T) {
 	type args struct {
 		subject string
 		msg     []byte
-		handler Handler
 		ctx     context.Context
 	}
 	tests := []struct {

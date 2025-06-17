@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"crypto/tls"
 	"testing"
 	"time"
 
@@ -8,9 +9,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestPublish(t *testing.T) {
+func TestPublishTLS(t *testing.T) {
 
-	connSub, err := client.Connect(":9999")
+	connSub, err := client.Connect(":9443", client.WithTLSConfig(&tls.Config{ServerName: "simpleappz.org"}))
 	if err != nil {
 		t.Error(err)
 		return
@@ -25,7 +26,7 @@ func TestPublish(t *testing.T) {
 	}
 	defer connSub.Unsubscribe(subID)
 
-	connPub, err := client.Connect(":9999")
+	connPub, err := client.Connect(":9443", client.WithTLSConfig(&tls.Config{ServerName: "simpleappz.org"}))
 	if err != nil {
 		t.Error(err)
 	}
@@ -36,8 +37,8 @@ func TestPublish(t *testing.T) {
 
 }
 
-func TestQueue(t *testing.T) {
-	connSub, err := client.Connect(":9999")
+func TestQueueTLS(t *testing.T) {
+	connSub, err := client.Connect(":9443", client.WithTLSConfig(&tls.Config{ServerName: "simpleappz.org"}))
 	if err != nil {
 		t.Error(err)
 		return
@@ -56,7 +57,7 @@ func TestQueue(t *testing.T) {
 	}
 	defer connSub.Unsubscribe(sub1)
 
-	connSub2, err := client.Connect(":9999")
+	connSub2, err := client.Connect(":9443", client.WithTLSConfig(&tls.Config{ServerName: "simpleappz.org"}))
 	if err != nil {
 		t.Error(err)
 		return
@@ -74,7 +75,7 @@ func TestQueue(t *testing.T) {
 	}
 	defer connSub2.Unsubscribe(sub2)
 
-	connPub, err := client.Connect(":9999")
+	connPub, err := client.Connect(":9443", client.WithTLSConfig(&tls.Config{ServerName: "simpleappz.org"}))
 	if err != nil {
 		t.Error(err)
 	}
@@ -85,15 +86,15 @@ func TestQueue(t *testing.T) {
 		assert.Nil(t, err)
 	}
 
-	time.AfterFunc(500*time.Millisecond, func() {
+	time.AfterFunc(200*time.Millisecond, func() {
 		assert.Equal(t, 10, count)
 		assert.NotEqual(t, 0, count1)
 		assert.NotEqual(t, 0, count2)
 	})
 }
 
-func TestRequest(t *testing.T) {
-	connSub, err := client.Connect(":9999")
+func TestRequestTLS(t *testing.T) {
+	connSub, err := client.Connect(":9443", client.WithTLSConfig(&tls.Config{ServerName: "simpleappz.org"}))
 	if err != nil {
 		t.Error(err)
 		return
@@ -110,7 +111,7 @@ func TestRequest(t *testing.T) {
 	}
 	defer connSub.Unsubscribe(subID)
 
-	connPub, err := client.Connect(":9999")
+	connPub, err := client.Connect(":9443", client.WithTLSConfig(&tls.Config{ServerName: "simpleappz.org"}))
 	if err != nil {
 		t.Error(err)
 	}
