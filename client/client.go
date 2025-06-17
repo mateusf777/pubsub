@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"log/slog"
@@ -45,11 +46,35 @@ func init() {
 	logger = logger.With("lib", "client")
 }
 
+type ConnectOption func(*connectConfig)
+
+type connectConfig struct {
+	tlsConfig *tls.Config
+}
+
+// WithTLSConfig allows passing a custom tls.Config for the client, including ServerName.
+func WithTLSConfig(cfg *tls.Config) ConnectOption {
+	return func(c *connectConfig) {
+		c.tlsConfig = cfg
+	}
+}
+
 // Connect makes the connection with the server
-func Connect(address string) (*Client, error) {
+func Connect(address string, opts ...ConnectOption) (*Client, error) {
 	logger.With("location", "Connect()").Debug("Connect")
 
-	conn, err := net.Dial("tcp", address)
+	cfg := &connectConfig{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	var conn net.Conn
+	var err error
+	if cfg.tlsConfig != nil {
+		conn, err = tls.Dial("tcp", address, cfg.tlsConfig)
+	} else {
+		conn, err = net.Dial("tcp", address)
+	}
 	if err != nil {
 		return nil, err
 	}

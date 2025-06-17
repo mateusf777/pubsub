@@ -115,9 +115,24 @@ jobs:
         push: false
         tags: pubsub:latest
 
+    - name: Write TLS certificate and key
+      run: |
+        echo "${{ secrets.TLS_CERT }}" > fullchain.pem
+        echo "${{ secrets.TLS_KEY }}" > privkey.pem
+
+    
     - name: Integration Tests
       run: |
         docker run -d --rm -p 9999:9999 --name test pubsub:latest
+        docker run -d --rm \
+          -e PUBSUB_TLS_CERT=/fullchain.pem \
+          -e PUBSUB_TLS_KEY=/privkey.pem \
+          -e PUBSUB_ADDRESS=0.0.0.0:9443 \
+          -p 9443:9443 \
+          -v ${{ github.workspace }}/fullchain.pem:/fullchain.pem \
+          -v ${{ github.workspace }}/privkey.pem:/privkey.pem \
+          --name test-tls pubsub:latest
         cd example/integration
-        go test .
+        go test ./...
         docker stop test
+        docker stop test-tls
