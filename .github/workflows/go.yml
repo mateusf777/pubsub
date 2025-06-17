@@ -111,7 +111,8 @@ jobs:
     - name: Build container image
       uses: docker/build-push-action@v6
       with:
-        context: "{{defaultContext}}:server"
+        context: .
+        file: server/Dockerfile
         push: false
         tags: pubsub:latest
 
