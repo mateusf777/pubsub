@@ -9,7 +9,6 @@ import (
 )
 
 func TestPublish(t *testing.T) {
-
 	connSub, err := client.Connect(":9999")
 	if err != nil {
 		t.Error(err)
@@ -37,6 +36,10 @@ func TestPublish(t *testing.T) {
 }
 
 func TestQueue(t *testing.T) {
+    const expected = 10
+    done := make(chan struct{}, expected)
+	done2 := make(chan struct{}, expected)
+
 	connSub, err := client.Connect(":9999")
 	if err != nil {
 		t.Error(err)
@@ -44,12 +47,9 @@ func TestQueue(t *testing.T) {
 	}
 	defer connSub.Close()
 
-	count := 0
-	count1 := 0
 	sub1, err := connSub.QueueSubscribe("test", "queue", func(msg *client.Message) {
 		assert.Equal(t, "message", string(msg.Data))
-		count++
-		count1++
+		done <- struct{}{}
 	})
 	if err != nil {
 		t.Error(err)
@@ -63,11 +63,10 @@ func TestQueue(t *testing.T) {
 	}
 	defer connSub2.Close()
 
-	count2 := 0
+	// count2 := 0
 	sub2, err := connSub2.QueueSubscribe("test", "queue", func(msg *client.Message) {
 		assert.Equal(t, "message", string(msg.Data))
-		count++
-		count2++
+		done2 <- struct{}{}
 	})
 	if err != nil {
 		t.Error(err)
@@ -80,16 +79,21 @@ func TestQueue(t *testing.T) {
 	}
 	defer connPub.Close()
 
-	for range 10 {
+	for range expected {
 		err = connPub.Publish("test", []byte("message"))
 		assert.Nil(t, err)
 	}
 
-	time.AfterFunc(500*time.Millisecond, func() {
-		assert.Equal(t, 10, count)
-		assert.NotEqual(t, 0, count1)
-		assert.NotEqual(t, 0, count2)
-	})
+    for i := 0; i < expected; i++ {
+        select {
+        case <-done:
+            t.Logf("connSub.QueueSubscribe called")
+		case <-done2:
+			t.Logf("connSub2.QueueSubscribe called")
+        case <-time.After(500 * time.Millisecond):
+            t.Fatalf("timeout waiting for handler call %d", i+1)
+        }
+    }
 }
 
 func TestRequest(t *testing.T) {

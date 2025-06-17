@@ -133,6 +133,6 @@ jobs:
           -v ${{ github.workspace }}/privkey.pem:/privkey.pem \
           --name test-tls pubsub:latest
         cd example/integration
-        go test ./...
+        go test -v . -race
         docker stop test
         docker stop test-tls
