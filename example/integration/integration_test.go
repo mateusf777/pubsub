@@ -36,8 +36,8 @@ func TestPublish(t *testing.T) {
 }
 
 func TestQueue(t *testing.T) {
-    const expected = 10
-    done := make(chan struct{}, expected)
+	const expected = 10
+	done := make(chan struct{}, expected)
 	done2 := make(chan struct{}, expected)
 
 	connSub, err := client.Connect(":9999")
@@ -84,16 +84,16 @@ func TestQueue(t *testing.T) {
 		assert.Nil(t, err)
 	}
 
-    for i := 0; i < expected; i++ {
-        select {
-        case <-done:
-            t.Logf("connSub.QueueSubscribe called")
+	for i := 0; i < expected; i++ {
+		select {
+		case <-done:
+			t.Logf("connSub.QueueSubscribe called")
 		case <-done2:
 			t.Logf("connSub2.QueueSubscribe called")
-        case <-time.After(500 * time.Millisecond):
-            t.Fatalf("timeout waiting for handler call %d", i+1)
-        }
-    }
+		case <-time.After(500 * time.Millisecond):
+			t.Fatalf("timeout waiting for handler call %d", i+1)
+		}
+	}
 }
 
 func TestRequest(t *testing.T) {

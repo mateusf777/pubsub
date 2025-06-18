@@ -2,10 +2,11 @@ package client
 
 import (
 	"errors"
-	"github.com/mateusf777/pubsub/core"
-	"github.com/stretchr/testify/assert"
 	"io"
 	"testing"
+
+	"github.com/mateusf777/pubsub/core"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestMessageHandler(t *testing.T) {

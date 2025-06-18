@@ -38,8 +38,8 @@ func TestPublishTLS(t *testing.T) {
 }
 
 func TestQueueTLS(t *testing.T) {
-    const expected = 10
-    done := make(chan struct{}, expected)
+	const expected = 10
+	done := make(chan struct{}, expected)
 	done2 := make(chan struct{}, expected)
 
 	connSub, err := client.Connect(":9443", client.WithTLSConfig(&tls.Config{ServerName: "simpleappz.org"}))
@@ -85,16 +85,16 @@ func TestQueueTLS(t *testing.T) {
 		assert.Nil(t, err)
 	}
 
-    for i := 0; i < expected; i++ {
-        select {
-        case <-done:
-            t.Logf("connSub.QueueSubscribe called")
+	for i := 0; i < expected; i++ {
+		select {
+		case <-done:
+			t.Logf("connSub.QueueSubscribe called")
 		case <-done2:
 			t.Logf("connSub2.QueueSubscribe called")
-        case <-time.After(500 * time.Millisecond):
-            t.Fatalf("timeout waiting for handler call %d", i+1)
-        }
-    }
+		case <-time.After(500 * time.Millisecond):
+			t.Fatalf("timeout waiting for handler call %d", i+1)
+		}
+	}
 
 }
 

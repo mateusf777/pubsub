@@ -2,12 +2,13 @@ package server
 
 import (
 	"errors"
-	"github.com/mateusf777/pubsub/core"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"io"
 	"net"
 	"testing"
+
+	"github.com/mateusf777/pubsub/core"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 var expectedRemote = &net.IPAddr{IP: []byte{127, 0, 0, 1}}

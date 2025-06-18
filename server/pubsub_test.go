@@ -38,12 +38,15 @@ func TestNewPubSub(t *testing.T) {
 			got := NewPubSub(tt.args.cfg)
 			if got == nil {
 				t.Errorf("NewPubSub() returned nil")
+				return
 			}
 			if got.msgCh == nil {
 				t.Errorf("NewPubSub() channel not initialized")
+				return
 			}
 			if got.handlersMap == nil {
 				t.Errorf("NewPubSub() handlers not initialized")
+				return
 			}
 
 			timer := time.NewTimer(time.Second)
@@ -51,12 +54,12 @@ func TestNewPubSub(t *testing.T) {
 				select {
 				case <-timer.C:
 					t.Errorf("the pubsub was not started and timed out")
+					return
 				default:
 					if got.running {
-						break
+						return
 					}
 				}
-				break
 			}
 		})
 	}
