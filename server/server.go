@@ -58,7 +58,7 @@ func Run(address string, opts ...ServerOption) {
 			return
 		}
 		tlsCfg := &tls.Config{Certificates: []tls.Certificate{cert}}
-		slog.Info("address", "address", address)
+
 		l, listenErr = tls.Listen("tcp4", address, tlsCfg)
 	} else {
 		l, listenErr = net.Listen("tcp4", address)
