@@ -147,13 +147,13 @@ This enables encrypted client-server communication over HTTPS-like transport.
 Start a subscriber:
 
 ```bash
-./subscriber
+./build/subscriber
 ```
 
 Send a request from another terminal:
 
 ```bash
-./request
+./build/request
 ```
 
 **Example Output:**
@@ -166,7 +166,7 @@ Send a request from another terminal:
 Launch a queue subscriber:
 
 ```bash
-./queue
+./build/queue
 ```
 
 **Example Output:**
