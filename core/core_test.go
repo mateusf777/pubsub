@@ -126,7 +126,6 @@ func TestNewConnectionHandler(t *testing.T) {
 
 func TestConnectionHandler_Handle(t *testing.T) {
 	type fields struct {
-		conn         func(m *MockConn)
 		reader       func(m *MockConnReader)
 		msgProcessor func(m *MockMsgProcessor)
 		keepAlive    func(m *MockKeepAliveEngine)

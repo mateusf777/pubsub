@@ -18,13 +18,11 @@ type Message struct {
 
 // HandlerSubject represents a handler for a subject
 type HandlerSubject struct {
-	client   string
-	id       int
-	subject  string
-	handler  Handler
-	maxMsg   int
-	countMsg int
-	group    string
+	client  string
+	id      int
+	subject string
+	handler Handler
+	group   string
 }
 
 // Handler is the type of the function that will handle the message received from a PUB op

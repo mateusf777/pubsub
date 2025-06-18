@@ -9,7 +9,7 @@ import (
 type Handler func(*Message)
 
 type msgRouter struct {
-	mu sync.RWMutex
+	mu          sync.RWMutex
 	subHandlers map[int]Handler
 }
 

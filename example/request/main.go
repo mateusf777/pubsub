@@ -1,9 +1,10 @@
 package main
 
 import (
-	"github.com/mateusf777/pubsub/client"
 	"log/slog"
 	"os"
+
+	"github.com/mateusf777/pubsub/client"
 )
 
 func main() {
