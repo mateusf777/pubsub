@@ -193,11 +193,12 @@ func TestConnectionHandler_Handle(t *testing.T) {
 
 func TestConnectionHandler_Close(t *testing.T) {
 	type fields struct {
-		conn     func(m *MockConn)
-		isClient bool
-		data     chan []byte
-		activity chan struct{}
-		close    chan struct{}
+		conn         func(m *MockConn)
+		isClient     bool
+		data         chan []byte
+		activity     chan struct{}
+		close        chan struct{}
+		closeTimeout time.Duration
 	}
 	tests := []struct {
 		name   string
@@ -237,10 +238,11 @@ func TestConnectionHandler_Close(t *testing.T) {
 					m.On("Read", mock.Anything).Return(0, io.EOF).Once()
 					m.On("Close").Return(nil).Once()
 				},
-				data:     make(chan []byte),
-				activity: make(chan struct{}),
-				close:    make(chan struct{}),
-				isClient: true,
+				data:         make(chan []byte),
+				activity:     make(chan struct{}),
+				close:        make(chan struct{}),
+				isClient:     true,
+				closeTimeout: time.Second,
 			},
 		},
 		{
@@ -263,13 +265,14 @@ func TestConnectionHandler_Close(t *testing.T) {
 				conn: func(m *MockConn) {
 					m.On("RemoteAddr").Return(expectedRemote).Once()
 					m.On("Write", Stop).Return(0, nil).Once()
-					m.On("Read", mock.Anything).Return(0, nil).Times(4)
+					m.On("Read", mock.Anything).Return(0, nil).Once()
 					m.On("Close").Return(nil).Once()
 				},
-				data:     make(chan []byte),
-				activity: make(chan struct{}),
-				close:    make(chan struct{}),
-				isClient: true,
+				data:         make(chan []byte),
+				activity:     make(chan struct{}),
+				close:        make(chan struct{}),
+				isClient:     true,
+				closeTimeout: 300 * time.Millisecond,
 			},
 		},
 	}
@@ -282,11 +285,12 @@ func TestConnectionHandler_Close(t *testing.T) {
 			}
 
 			ch := &ConnectionHandler{
-				conn:     mockConn,
-				isClient: tt.fields.isClient,
-				data:     tt.fields.data,
-				activity: tt.fields.activity,
-				close:    tt.fields.close,
+				conn:         mockConn,
+				isClient:     tt.fields.isClient,
+				data:         tt.fields.data,
+				activity:     tt.fields.activity,
+				close:        tt.fields.close,
+				closeTimeout: tt.fields.closeTimeout,
 			}
 			ch.Close()
 		})

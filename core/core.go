@@ -115,10 +115,11 @@ type KeepAliveEngine interface {
 }
 
 type ConnectionHandlerConfig struct {
-	Conn        net.Conn
-	MsgHandler  MessageHandler
-	IsClient    bool
-	IdleTimeout time.Duration
+	Conn         net.Conn
+	MsgHandler   MessageHandler
+	IsClient     bool
+	IdleTimeout  time.Duration
+	CloseTimeout time.Duration
 }
 
 type ConnectionHandler struct {
@@ -130,6 +131,7 @@ type ConnectionHandler struct {
 	data         chan []byte
 	activity     chan struct{}
 	close        chan struct{}
+	closeTimeout time.Duration
 }
 
 func NewConnectionHandler(cfg ConnectionHandlerConfig) (*ConnectionHandler, error) {
@@ -144,6 +146,10 @@ func NewConnectionHandler(cfg ConnectionHandlerConfig) (*ConnectionHandler, erro
 
 	if cfg.IdleTimeout <= 0 {
 		cfg.IdleTimeout = IdleTimeout
+	}
+
+	if cfg.CloseTimeout <= 0 {
+		cfg.CloseTimeout = 10 * time.Second
 	}
 
 	reader := &ConnectionReader{
@@ -178,6 +184,7 @@ func NewConnectionHandler(cfg ConnectionHandlerConfig) (*ConnectionHandler, erro
 		data:         data,
 		activity:     activity,
 		close:        closeHandler,
+		closeTimeout: cfg.CloseTimeout,
 	}, nil
 }
 
@@ -206,7 +213,7 @@ func (ch *ConnectionHandler) Close() {
 			l.Info("Failed to send STOP to server, will proceed to close", "error", err)
 		} else {
 			l.Info("Waiting for Server to close the connection")
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), ch.closeTimeout)
 			defer cancel()
 
 			ch.waitServerClose(ctx)
