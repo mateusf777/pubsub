@@ -35,7 +35,7 @@ func main() {
 		slog.Error("Subscribe", "error", err)
 		return
 	}
-	defer conn.Unsubscribe(subID)
+	defer conn.Unsubscribe("test", subID)
 
 	subID2, err := conn.Subscribe("count", func(msg *client.Message) {
 		resp := strconv.Itoa(count)
@@ -48,7 +48,7 @@ func main() {
 		slog.Error("Subscribe", "error", err)
 		return
 	}
-	defer conn.Unsubscribe(subID2)
+	defer conn.Unsubscribe("count", subID2)
 
 	subID3, err := conn.Subscribe("time", func(msg *client.Message) {
 		slog.Debug("getting time", "message", msg)
@@ -62,7 +62,7 @@ func main() {
 		slog.Error("Subscribe", "error", err)
 		return
 	}
-	defer conn.Unsubscribe(subID3)
+	defer conn.Unsubscribe("time", subID3)
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)

@@ -9,6 +9,8 @@ import (
 )
 
 func TestPublish(t *testing.T) {
+	done := make(chan struct{}, 1)
+
 	connSub, err := client.Connect(":9999")
 	if err != nil {
 		t.Error(err)
@@ -18,11 +20,12 @@ func TestPublish(t *testing.T) {
 
 	subID, err := connSub.Subscribe("hello", func(msg *client.Message) {
 		assert.Equal(t, "world", string(msg.Data))
+		done <- struct{}{}
 	})
 	if err != nil {
 		t.Error(err)
 	}
-	defer connSub.Unsubscribe(subID)
+	defer connSub.Unsubscribe("hello", subID)
 
 	connPub, err := client.Connect(":9999")
 	if err != nil {
@@ -32,6 +35,13 @@ func TestPublish(t *testing.T) {
 
 	err = connPub.Publish("hello", []byte("world"))
 	assert.Nil(t, err)
+
+	select {
+	case <-done:
+		t.Logf("connSub.Subscribe called")
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("timeout waiting for handler call")
+	}
 
 }
 
@@ -54,7 +64,7 @@ func TestQueue(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer connSub.Unsubscribe(sub1)
+	defer connSub.Unsubscribe("test", sub1)
 
 	connSub2, err := client.Connect(":9999")
 	if err != nil {
@@ -71,7 +81,7 @@ func TestQueue(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer connSub2.Unsubscribe(sub2)
+	defer connSub2.Unsubscribe("test", sub2)
 
 	connPub, err := client.Connect(":9999")
 	if err != nil {
@@ -84,7 +94,7 @@ func TestQueue(t *testing.T) {
 		assert.Nil(t, err)
 	}
 
-	for i := 0; i < expected; i++ {
+	for i := range expected {
 		select {
 		case <-done:
 			t.Logf("connSub.QueueSubscribe called")
@@ -112,7 +122,7 @@ func TestRequest(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer connSub.Unsubscribe(subID)
+	defer connSub.Unsubscribe("test", subID)
 
 	connPub, err := client.Connect(":9999")
 	if err != nil {

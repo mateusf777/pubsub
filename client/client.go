@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
@@ -146,12 +147,12 @@ func (c *Client) Subscribe(subject string, handler Handler) (int, error) {
 
 // Unsubscribe removes the handler from router and sends UNSUB to server
 // Uses UNSUB <sub.ID>
-func (c *Client) Unsubscribe(subscriberID int) error {
+func (c *Client) Unsubscribe(subject string, subscriberID int) error {
 	c.router.removeSubHandler(subscriberID)
 
 	subIDBytes := strconv.AppendInt([]byte{}, int64(subscriberID), 10)
 
-	result := core.BuildBytes(core.OpUnsub, core.Space, subIDBytes, core.CRLF)
+	result := core.BuildBytes(core.OpUnsub, core.Space, []byte(subject), core.Space, subIDBytes, core.CRLF)
 	logger.Debug("Unsubscribe", "result", string(result))
 
 	if _, err := c.writer.Write(result); err != nil {
@@ -190,7 +191,7 @@ func (c *Client) RequestWithCtx(ctx context.Context, subject string, msg []byte)
 
 	resCh := make(chan *Message)
 
-	reply := core.BuildBytes([]byte("REPLY."), c.generator.nextUnique())
+	reply := core.BuildBytes([]byte("REPLY."), []byte(c.generator.nextUnique()))
 
 	subscriberID, err := c.Subscribe(string(reply), func(msg *Message) {
 		l.Debug("received", "msg", msg)
@@ -217,7 +218,7 @@ func (c *Client) RequestWithCtx(ctx context.Context, subject string, msg []byte)
 	case <-ctx.Done():
 		return nil, fmt.Errorf("timeout")
 	case r := <-resCh:
-		if err := c.Unsubscribe(subscriberID); err != nil {
+		if err := c.Unsubscribe(string(reply), subscriberID); err != nil {
 			return nil, fmt.Errorf("client Request Unsubscribe, %v", err)
 		}
 		return r, nil
@@ -232,12 +233,12 @@ func (c *Client) Reply(msg *Message, data []byte) error {
 }
 
 type uniqueGenerator interface {
-	nextUnique() []byte
+	nextUnique() string
 }
 
 type uniqueGen struct{}
 
-func (ug uniqueGen) nextUnique() []byte {
+func (ug uniqueGen) nextUnique() string {
 	var unique [16]byte
 
 	_, _ = rand.Read(unique[:])
@@ -245,5 +246,5 @@ func (ug uniqueGen) nextUnique() []byte {
 	unique[6] = (unique[6] & 0x0F) | 0x40 // Version 4 UUID
 	unique[8] = (unique[8] & 0x3F) | 0x80 // Variant 1 UUID
 
-	return unique[:]
+	return hex.EncodeToString(unique[:])
 }
