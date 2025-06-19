@@ -45,7 +45,7 @@ docker run -d --rm \
 
 cd example/integration
 go clean -testcache
-go test -v . -race
+go test . -race
 docker stop test
 docker stop test-tls
 

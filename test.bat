@@ -38,7 +38,7 @@ start "" /b cmd /c "set PUBSUB_TLS_CERT=%CERT_DIR%\fullchain.pem && set PUBSUB_T
 
 cd example/integration
 go clean -testcache
-go test -v -race .
+go test -race .
 
 REM Stop both servers
 for /f "tokens=2" %%a in ('tasklist /fi "imagename eq ps-server.exe" /fo list ^| findstr "PID"') do (

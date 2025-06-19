@@ -316,7 +316,11 @@ func (m *MessageProcessor) Process(ctx context.Context) {
 		case <-ctx.Done():
 			l.Info("MessageProcessor Done", "remote", m.remote)
 			return
-		case data := <-m.data:
+		case data, ok := <-m.data:
+			if !ok {
+				l.Info("MessageProcessor data channel closed", "remote", m.remote)
+				return
+			}
 			m.handler(m.writer, data, m.data, m.close)
 		}
 	}
@@ -342,7 +346,11 @@ func (k *KeepAlive) Run(ctx context.Context) {
 loop:
 	for {
 		select {
-		case <-k.activity:
+		case _, ok := <-k.activity:
+			if !ok {
+				l.Debug("KeepAlive activity channel closed", "remote", k.remote)
+				break loop
+			}
 			l.Debug("Reset", "remote", k.remote)
 			checkTimeout.Reset(k.idleTimeout)
 			count = 0

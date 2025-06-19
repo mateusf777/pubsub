@@ -165,6 +165,7 @@ func TestClient_Unsubscribe(t *testing.T) {
 		router func(m *Mockrouter)
 	}
 	type args struct {
+		subject      string
 		subscriberID int
 	}
 	tests := []struct {
@@ -179,13 +180,14 @@ func TestClient_Unsubscribe(t *testing.T) {
 				reader: func(r *io.PipeReader) {
 					buf := make([]byte, 1024)
 					n, _ := r.Read(buf)
-					assert.Equal(t, core.BuildBytes(core.OpUnsub, core.Space, []byte("1"), core.CRLF), buf[:n])
+					assert.Equal(t, core.BuildBytes(core.OpUnsub, core.Space, []byte("subject"), core.Space, []byte("1"), core.CRLF), buf[:n])
 				},
 				router: func(m *Mockrouter) {
 					m.On("removeSubHandler", 1).Return().Once()
 				},
 			},
 			args: args{
+				subject:      "subject",
 				subscriberID: 1,
 			},
 			wantErr: assert.NoError,
@@ -201,6 +203,7 @@ func TestClient_Unsubscribe(t *testing.T) {
 				},
 			},
 			args: args{
+				subject:      "subject",
 				subscriberID: 1,
 			},
 			wantErr: assert.Error,
@@ -224,7 +227,7 @@ func TestClient_Unsubscribe(t *testing.T) {
 				router: mockRouter,
 			}
 
-			tt.wantErr(t, c.Unsubscribe(tt.args.subscriberID), fmt.Sprintf("Unsubscribe(%v)", tt.args.subscriberID))
+			tt.wantErr(t, c.Unsubscribe(tt.args.subject, tt.args.subscriberID), fmt.Sprintf("Unsubscribe(%v, %v)", tt.args.subject, tt.args.subscriberID))
 		})
 	}
 }
@@ -346,7 +349,7 @@ func TestClient_Request(t *testing.T) {
 					assert.Equal(t, core.BuildBytes(core.OpPub, core.Space, []byte("test"), core.Space, []byte("REPLY.1"), core.CRLF, []byte("test"), core.CRLF), buf[:n])
 
 					n, _ = r.Read(buf)
-					assert.Equal(t, core.BuildBytes(core.OpUnsub, core.Space, []byte("1"), core.CRLF), buf[:n])
+					assert.Equal(t, core.BuildBytes(core.OpUnsub, core.Space, []byte("REPLY.1"), core.Space, []byte("1"), core.CRLF), buf[:n])
 				},
 				router: func(m *Mockrouter) {
 					m.On("addSubHandler", mock.MatchedBy(func(h Handler) bool {
@@ -359,7 +362,7 @@ func TestClient_Request(t *testing.T) {
 					m.On("removeSubHandler", 1).Return().Once()
 				},
 				generator: func(m *MockuniqueGenerator) {
-					m.On("nextUnique").Return([]byte("1")).Once()
+					m.On("nextUnique").Return("1").Once()
 				},
 			},
 			args: args{
@@ -382,7 +385,7 @@ func TestClient_Request(t *testing.T) {
 					m.On("addSubHandler", mock.Anything).Return(1).Once()
 				},
 				generator: func(m *MockuniqueGenerator) {
-					m.On("nextUnique").Return([]byte("1")).Once()
+					m.On("nextUnique").Return("1").Once()
 				},
 			},
 			args: args{
@@ -406,7 +409,7 @@ func TestClient_Request(t *testing.T) {
 					m.On("addSubHandler", mock.Anything).Return(1).Once()
 				},
 				generator: func(m *MockuniqueGenerator) {
-					m.On("nextUnique").Return([]byte("1")).Once()
+					m.On("nextUnique").Return("1").Once()
 				},
 			},
 			args: args{
@@ -440,7 +443,7 @@ func TestClient_Request(t *testing.T) {
 					m.On("removeSubHandler", 1).Return().Once()
 				},
 				generator: func(m *MockuniqueGenerator) {
-					m.On("nextUnique").Return([]byte("1")).Once()
+					m.On("nextUnique").Return("1").Once()
 				},
 			},
 			args: args{
@@ -467,7 +470,7 @@ func TestClient_Request(t *testing.T) {
 					})).Return(1).Once()
 				},
 				generator: func(m *MockuniqueGenerator) {
-					m.On("nextUnique").Return([]byte("1")).Once()
+					m.On("nextUnique").Return("1").Once()
 				},
 			},
 			args: args{
