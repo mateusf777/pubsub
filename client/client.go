@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -94,6 +95,7 @@ func Connect(address string, opts ...ConnectOption) (*Client, error) {
 		connHandler: connHandler,
 		writer:      conn,
 		router:      rt,
+		generator:   uniqueGen{},
 	}
 
 	go connHandler.Handle()
@@ -105,7 +107,7 @@ type Client struct {
 	connHandler ConnectionHandler
 	writer      io.Writer
 	router      router
-	nextReply   int
+	generator   uniqueGenerator
 }
 
 func (c *Client) Close() {
@@ -188,8 +190,7 @@ func (c *Client) RequestWithCtx(ctx context.Context, subject string, msg []byte)
 
 	resCh := make(chan *Message)
 
-	c.nextReply++
-	reply := strconv.AppendInt([]byte("REPLY."), int64(c.nextReply), 10)
+	reply := core.BuildBytes([]byte("REPLY."), c.generator.nextUnique())
 
 	subscriberID, err := c.Subscribe(string(reply), func(msg *Message) {
 		l.Debug("received", "msg", msg)
@@ -228,4 +229,21 @@ func (c *Client) Reply(msg *Message, data []byte) error {
 		return nil
 	}
 	return c.Publish(msg.Reply, data)
+}
+
+type uniqueGenerator interface {
+	nextUnique() []byte
+}
+
+type uniqueGen struct{}
+
+func (ug uniqueGen) nextUnique() []byte {
+	var unique [16]byte
+
+	_, _ = rand.Read(unique[:])
+
+	unique[6] = (unique[6] & 0x0F) | 0x40 // Version 4 UUID
+	unique[8] = (unique[8] & 0x3F) | 0x80 // Variant 1 UUID
+
+	return unique[:]
 }

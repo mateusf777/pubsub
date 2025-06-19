@@ -318,8 +318,9 @@ func TestClient_Request(t *testing.T) {
 	defer cancel()
 
 	type fields struct {
-		reader func(r *io.PipeReader)
-		router func(m *Mockrouter)
+		reader    func(r *io.PipeReader)
+		router    func(m *Mockrouter)
+		generator func(m *MockuniqueGenerator)
 	}
 	type args struct {
 		subject string
@@ -357,6 +358,9 @@ func TestClient_Request(t *testing.T) {
 					})).Return(1).Once()
 					m.On("removeSubHandler", 1).Return().Once()
 				},
+				generator: func(m *MockuniqueGenerator) {
+					m.On("nextUnique").Return([]byte("1")).Once()
+				},
 			},
 			args: args{
 				subject: "test",
@@ -376,6 +380,9 @@ func TestClient_Request(t *testing.T) {
 				},
 				router: func(m *Mockrouter) {
 					m.On("addSubHandler", mock.Anything).Return(1).Once()
+				},
+				generator: func(m *MockuniqueGenerator) {
+					m.On("nextUnique").Return([]byte("1")).Once()
 				},
 			},
 			args: args{
@@ -397,6 +404,9 @@ func TestClient_Request(t *testing.T) {
 				},
 				router: func(m *Mockrouter) {
 					m.On("addSubHandler", mock.Anything).Return(1).Once()
+				},
+				generator: func(m *MockuniqueGenerator) {
+					m.On("nextUnique").Return([]byte("1")).Once()
 				},
 			},
 			args: args{
@@ -429,6 +439,9 @@ func TestClient_Request(t *testing.T) {
 					})).Return(1).Once()
 					m.On("removeSubHandler", 1).Return().Once()
 				},
+				generator: func(m *MockuniqueGenerator) {
+					m.On("nextUnique").Return([]byte("1")).Once()
+				},
 			},
 			args: args{
 				subject: "test",
@@ -453,6 +466,9 @@ func TestClient_Request(t *testing.T) {
 						return true
 					})).Return(1).Once()
 				},
+				generator: func(m *MockuniqueGenerator) {
+					m.On("nextUnique").Return([]byte("1")).Once()
+				},
 			},
 			args: args{
 				subject: "test",
@@ -467,6 +483,7 @@ func TestClient_Request(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			testReader, testWriter := io.Pipe()
 			mockRouter := NewMockrouter(t)
+			mockGenerator := NewMockuniqueGenerator(t)
 
 			if tt.fields.reader != nil {
 				go tt.fields.reader(testReader)
@@ -476,9 +493,14 @@ func TestClient_Request(t *testing.T) {
 				tt.fields.router(mockRouter)
 			}
 
+			if tt.fields.generator != nil {
+				tt.fields.generator(mockGenerator)
+			}
+
 			c := &Client{
-				writer: testWriter,
-				router: mockRouter,
+				writer:    testWriter,
+				router:    mockRouter,
+				generator: mockGenerator,
 			}
 
 			var (
