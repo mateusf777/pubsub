@@ -206,7 +206,7 @@ func (ch *ConnectionHandler) Close() {
 			l.Info("Failed to send STOP to server, will proceed to close", "error", err)
 		} else {
 			l.Info("Waiting for Server to close the connection")
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
 			ch.waitServerClose(ctx)
