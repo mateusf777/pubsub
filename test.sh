@@ -60,7 +60,7 @@ docker run -d --rm \
     -v "$CERT_DIR/myca-cert.pem":/myca-cert.pem \
     --name test-tls-ca pubsub:latest
 
-go test -race -run '^(TestConnectTLSNoCert|TestConnectTLSInvalidCert|TestConnectTLS)$' .
+go test -race -run '^(TestConnectTLSNoCert|TestConnectTLSInvalidCert|TestConnectTLS|TestPublishDifferentTenants|TestPublishSameTenants)$' .
 docker stop test-tls-ca
 
 cd ../..

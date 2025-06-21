@@ -49,7 +49,7 @@ for /f "tokens=2" %%a in ('tasklist /fi "imagename eq ps-server.exe" /fo list ^|
 
 start "" /b cmd /c "set PUBSUB_TLS_CERT=%CERT_DIR%\fullchain.pem && set PUBSUB_TLS_KEY=%CERT_DIR%\privkey.pem && set PUBSUB_TLS_CA=%CERT_DIR%\myca-cert.pem && set PUBSUB_ADDRESS=0.0.0.0:9443 && ..\..\build\ps-server.exe"
 
-go test -race -run "^(TestConnectTLSNoCert|TestConnectTLSInvalidCert|TestConnectTLS)$" .
+go test -race -run "^(TestConnectTLSNoCert|TestConnectTLSInvalidCert|TestConnectTLS|TestPublishDifferentTenants|TestPublishSameTenants)$" .
 
 for /f "tokens=2" %%a in ('tasklist /fi "imagename eq ps-server.exe" /fo list ^| findstr "PID"') do (
     taskkill /PID %%a /F

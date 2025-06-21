@@ -87,7 +87,7 @@ func (s *ConnHandler) Close() {
 }
 
 // MessageHandler return a handler for processing a remote message, verify and dispatch it and writes the response to the connection.
-func MessageHandler(pubSub PubSubConn, remote string) core.MessageHandler {
+func MessageHandler(pubSub PubSubConn, tenant, remote string) core.MessageHandler {
 
 	return func(writer io.Writer, raw []byte, dataCh <-chan []byte, close chan<- struct{}) {
 
@@ -112,12 +112,12 @@ func MessageHandler(pubSub PubSubConn, remote string) core.MessageHandler {
 
 		// PUB
 		case bytes.HasPrefix(bytes.ToUpper(data), core.OpPub):
-			result = handlePub(pubSub, data, dataCh)
+			result = handlePub(pubSub, data, dataCh, tenant)
 
 		// SUB
 		case bytes.HasPrefix(bytes.ToUpper(data), core.OpSub):
 			slog.Debug("sub", "value", data)
-			result = handleSub(writer, pubSub, remote, data)
+			result = handleSub(writer, pubSub, tenant, remote, data)
 
 		// UNSUB
 		case bytes.HasPrefix(bytes.ToUpper(data), core.OpUnsub):
@@ -144,7 +144,7 @@ func MessageHandler(pubSub PubSubConn, remote string) core.MessageHandler {
 }
 
 // handlePub Handles PUB message. See core.OpPub.
-func handlePub(pubSub PubSubConn, received []byte, dataCh <-chan []byte) []byte {
+func handlePub(pubSub PubSubConn, received []byte, dataCh <-chan []byte, tenant string) []byte {
 	// Default result
 	result := core.OK
 
@@ -163,6 +163,10 @@ func handlePub(pubSub PubSubConn, received []byte, dataCh <-chan []byte) []byte 
 	if len(args) == 3 {
 		reply := args[2]
 		opts = append(opts, WithReply(string(reply)))
+	}
+
+	if tenant != "" {
+		opts = append(opts, WithTenantPub(tenant))
 	}
 
 	// Dispatch
@@ -191,7 +195,7 @@ func handleUnsub(pubSub PubSubConn, remote string, received []byte) []byte {
 }
 
 // handleSub Handles SUB. See core.OpSub.
-func handleSub(writer io.Writer, pubSub PubSubConn, remote string, received []byte) []byte {
+func handleSub(writer io.Writer, pubSub PubSubConn, tenant string, remote string, received []byte) []byte {
 	// Default result
 	result := core.OK
 
@@ -210,6 +214,10 @@ func handleSub(writer io.Writer, pubSub PubSubConn, remote string, received []by
 		opts = append(opts, WithGroup(string(group)))
 	}
 	opts = append(opts, WithID(subID))
+
+	if tenant != "" {
+		opts = append(opts, WithTenantSub(tenant))
+	}
 
 	// Dispatch
 	err := pubSub.Subscribe(string(args[1]), remote, subscriberHandler(writer, subID), opts...)

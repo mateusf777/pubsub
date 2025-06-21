@@ -95,6 +95,8 @@ func acceptClients(l net.Listener, isTls bool) {
 			return
 		}
 
+		var tenant string
+
 		if isTls {
 			tlsConn, ok := c.(*tls.Conn)
 			if !ok {
@@ -107,11 +109,19 @@ func acceptClients(l net.Listener, isTls bool) {
 				tlsConn.Close()
 				continue
 			}
+
+			tlsConnState := tlsConn.ConnectionState()
+			if len(tlsConnState.PeerCertificates) > 0 {
+				tenant = tlsConnState.PeerCertificates[0].SerialNumber.String()
+				slog.Info("Server.acceptClients", "remote", c.RemoteAddr().String(), "tenant", tenant)
+			} else {
+				slog.Warn("Server.acceptClients, verify if you need to configure the server with CA cert to avoid this", "error", "no peer certificates found in TLS connection")
+			}
 		}
 
 		ch, err := core.NewConnectionHandler(core.ConnectionHandlerConfig{
 			Conn:       c,
-			MsgHandler: MessageHandler(ps, c.RemoteAddr().String()),
+			MsgHandler: MessageHandler(ps, tenant, c.RemoteAddr().String()),
 		})
 		if err != nil {
 			slog.Error("NewConnectionHandler", "error", err)
