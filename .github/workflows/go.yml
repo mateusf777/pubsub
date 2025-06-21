@@ -158,10 +158,10 @@ jobs:
             -v ${{ github.workspace }}/myca-cert.pem:/myca-cert.pem \
             --name test-tls-ca pubsub:latest
 
-        export PUBSUB_TLS_CLIENT_CERT=/client-cert.pem
-        export PUBSUB_TLS_CLIENT_KEY=/client-key.pem
-        export PUBSUB_TLS_INVALID_CLIENT_CERT=/invalid-client-cert.pem
-        export PUBSUB_TLS_INVALID_CLIENT_KEY=/invalid-client-key.pem
+        export PUBSUB_TLS_CLIENT_CERT=${{ github.workspace }}/client-cert.pem
+        export PUBSUB_TLS_CLIENT_KEY=${{ github.workspace }}/client-key.pem
+        export PUBSUB_TLS_INVALID_CLIENT_CERT=${{ github.workspace }}/invalid-client-cert.pem
+        export PUBSUB_TLS_INVALID_CLIENT_KEY=${{ github.workspace }}/invalid-client-key.pem
 
         go test -race -run '^(TestConnectTLSNoCert|TestConnectTLSInvalidCert|TestConnectTLS)$' .
         docker stop test-tls-ca        
