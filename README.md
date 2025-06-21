@@ -21,8 +21,9 @@ This project was inspired by the [NATS protocol](https://docs.nats.io/nats-proto
 * ✅ PUB, SUB, UNSUB, STOP, PING/PONG message handling
 * ✅ Queue groups for load-balanced subscriptions
 * ✅ TLS support for encrypted communication
-* ⚙️ Authentication system (in progress)
-* ⚙️ Multi-tenancy and metrics (planned)
+* ✅ Authentication system
+* ✅ Multi-tenancy when the server is configured with a CA
+* ⚙️ Metrics (planned)
 
 ---
 
@@ -168,6 +169,11 @@ Environment variable summary:
 
 When using `PUBSUB_TLS_CA`, the server will **require** and **verify** client certificates during the TLS handshake. Connections without valid certificates will be rejected. (See `integration_tls_ca_test.go` for an example of this in practice.)
 
+**Note:**
+
+* If the server is not configured with TLS, all connections are accepted (insecure).
+* If TLS is configured but `PUBSUB_TLS_CA` is **not** set, the server provides secure transport only—no client identity verification or tenant isolation.
+* When `PUBSUB_TLS_CA` is provided, **tenant isolation is enforced**: messages are only routed between connections with same certificate.
 
 ---
 
