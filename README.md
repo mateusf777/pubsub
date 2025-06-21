@@ -130,13 +130,44 @@ To start the pub/sub server:
 
 ### 🔐 TLS Support
 
-TLS is supported using environment variables for configuration. To start the server with TLS enabled:
+TLS is supported using environment variables for configuration.
+
+#### ➔ Basic TLS (Server Authentication Only)
+
+To start the server with TLS enabled (clients verify the server certificate):
 
 ```bash
-PUBSUB_TLS_CERT=./certs/server.crt PUBSUB_TLS_KEY=./certs/server.key PUBSUB_ADDRESS=0.0.0.0:9443 ./build/ps-server
+PUBSUB_TLS_CERT=./certs/server.crt \
+PUBSUB_TLS_KEY=./certs/server.key \
+PUBSUB_ADDRESS=0.0.0.0:9443 \
+./build/ps-server
 ```
 
-This enables encrypted client-server communication over HTTPS-like transport.
+This enables encrypted client-server communication over a secure TLS connection. The server presents a certificate to the client, but does **not** verify client certificates.
+
+---
+
+#### ➔ Mutual TLS (Client Authentication with CA)
+
+To enable client certificate verification, you must also provide a certificate authority (CA) used to sign client certificates:
+
+```bash
+PUBSUB_TLS_CERT=./certs/server.crt \
+PUBSUB_TLS_KEY=./certs/server.key \
+PUBSUB_TLS_CA=./certs/ca.crt \
+PUBSUB_ADDRESS=0.0.0.0:9443 \
+./build/ps-server
+```
+
+Environment variable summary:
+
+* `PUBSUB_TLS_CERT`: Path to the server certificate.
+* `PUBSUB_TLS_KEY`: Path to the server private key.
+* `PUBSUB_TLS_CA`: **Used to verify client certificates.** Only clients with certificates signed by this CA will be accepted.
+* `PUBSUB_ADDRESS`: Address the server should bind to.
+
+When using `PUBSUB_TLS_CA`, the server will **require** and **verify** client certificates during the TLS handshake. Connections without valid certificates will be rejected. (See `integration_tls_ca_test.go` for an example of this in practice.)
+
 
 ---
 
