@@ -120,11 +120,21 @@ jobs:
       run: |
         echo "${{ secrets.TLS_CERT }}" > fullchain.pem
         echo "${{ secrets.TLS_KEY }}" > privkey.pem
+        echo "${{ secrets.TLS_CA }}" > myca-cert.pem
+        echo "${{ secrets.CLIENT_CERT }}" > client-cert.pem
+        echo "${{ secrets.CLIENT_KEY }}" > client-key.pem
+        echo "${{ secrets.INVALID_CLIENT_CERT }}" > invalid-client-cert.pem
+        echo "${{ secrets.INVALID_CLIENT_KEY }}" > invalid-client-key.pem
 
-    
     - name: Integration Tests
       run: |
+        cd example/integration
+
         docker run -d --rm -p 9999:9999 --name test pubsub:latest
+
+        go test -race -run '^(TestPublish|TestQueue|TestRequest)$' .
+        docker stop test
+
         docker run -d --rm \
           -e PUBSUB_TLS_CERT=/fullchain.pem \
           -e PUBSUB_TLS_KEY=/privkey.pem \
@@ -133,7 +143,25 @@ jobs:
           -v ${{ github.workspace }}/fullchain.pem:/fullchain.pem \
           -v ${{ github.workspace }}/privkey.pem:/privkey.pem \
           --name test-tls pubsub:latest
-        cd example/integration
-        go test -v . -race
-        docker stop test
+
+        go test -race -run '^(TestPublishTLS|TestQueueTLS|TestRequestTLS)$' .
         docker stop test-tls
+
+        docker run -d --rm \
+            -e PUBSUB_TLS_CERT=/fullchain.pem \
+            -e PUBSUB_TLS_KEY=/privkey.pem \
+            -e PUBSUB_TLS_CA=/myca-cert.pem \
+            -e PUBSUB_ADDRESS=0.0.0.0:9443 \
+            -p 9443:9443 \
+            -v ${{ github.workspace }}/fullchain.pem:/fullchain.pem \
+            -v ${{ github.workspace }}/privkey.pem:/privkey.pem \
+            -v ${{ github.workspace }}/myca-cert.pem:/myca-cert.pem \
+            --name test-tls-ca pubsub:latest
+
+        export PUBSUB_TLS_CLIENT_CERT=${{ github.workspace }}/client-cert.pem
+        export PUBSUB_TLS_CLIENT_KEY=${{ github.workspace }}/client-key.pem
+        export PUBSUB_TLS_INVALID_CLIENT_CERT=${{ github.workspace }}/invalid-client-cert.pem
+        export PUBSUB_TLS_INVALID_CLIENT_KEY=${{ github.workspace }}/invalid-client-key.pem
+
+        go test -race -run '^(TestConnectTLSNoCert|TestConnectTLSInvalidCert|TestConnectTLS)$' .
+        docker stop test-tls-ca        
