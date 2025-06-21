@@ -1,0 +1,38 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch PubSub Server",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/server/cmd/pubsub"
+        },
+        {
+            "name": "Launch PubSub Server TLS",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/server/cmd/pubsub",
+            "env": {
+                "PUBSUB_ADDRESS": "0.0.0.0:9443",
+                "PUBSUB_TLS_CERT": "/home/m473u5/work/cert/fullchain.pem",
+                "PUBSUB_TLS_KEY": "/home/m473u5/work/cert/privkey.pem",
+                "PUBSUB_TLS_CA": ""
+            }
+        },
+        {
+            "name": "Launch PubSub Server TLS + CA",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/server/cmd/pubsub",
+            "env": {
+                "PUBSUB_ADDRESS": "0.0.0.0:9443",
+                "PUBSUB_TLS_CERT": "/home/m473u5/work/cert/fullchain.pem",
+                "PUBSUB_TLS_KEY": "/home/m473u5/work/cert/privkey.pem",
+                "PUBSUB_TLS_CA": "/home/m473u5/work/cert/myca-cert.pem"
+            }
+        }
+    ]
+}

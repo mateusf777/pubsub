@@ -18,9 +18,14 @@ func main() {
 
 	certFile := os.Getenv("PUBSUB_TLS_CERT")
 	keyFile := os.Getenv("PUBSUB_TLS_KEY")
+	caFile := os.Getenv("PUBSUB_TLS_CA")
 
 	if certFile != "" && keyFile != "" {
-		server.Run(address, server.WithTLS(certFile, keyFile))
+		server.Run(address, server.WithTLS(server.TLSConfig{
+			CertFile: certFile,
+			KeyFile:  keyFile,
+			CAFile:   caFile,
+		}))
 	} else {
 		server.Run(address)
 	}

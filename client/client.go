@@ -81,6 +81,24 @@ func Connect(address string, opts ...ConnectOption) (*Client, error) {
 		return nil, err
 	}
 
+	if cfg.tlsConfig != nil {
+		tlsConn, ok := conn.(*tls.Conn)
+		if !ok {
+			return nil, fmt.Errorf("client Connect TLS Dial failed: %T is not a *tls.Conn", conn)
+		}
+
+		if err := tlsConn.Handshake(); err != nil {
+			return nil, fmt.Errorf("client Connect TLS Handshake failed: %v", err)
+		}
+
+		buf := make([]byte, 1)
+		tlsConn.SetReadDeadline(time.Now().Add(time.Second))
+		_, err = tlsConn.Read(buf)
+		if err != nil {
+			return nil, fmt.Errorf("post-handshake read failed: %v", err)
+		}
+	}
+
 	rt := newMsgRouter()
 
 	connHandler, err := core.NewConnectionHandler(core.ConnectionHandlerConfig{
