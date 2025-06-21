@@ -153,9 +153,9 @@ jobs:
             -e PUBSUB_TLS_CA=/myca-cert.pem \
             -e PUBSUB_ADDRESS=0.0.0.0:9443 \
             -p 9443:9443 \
-            -v ${{ github.workspace }}/fullchain.pem":/fullchain.pem \
-            -v ${{ github.workspace }}/privkey.pem":/privkey.pem \
-            -v ${{ github.workspace }}/myca-cert.pem":/myca-cert.pem \
+            -v ${{ github.workspace }}/fullchain.pem:/fullchain.pem \
+            -v ${{ github.workspace }}/privkey.pem:/privkey.pem \
+            -v ${{ github.workspace }}/myca-cert.pem:/myca-cert.pem \
             --name test-tls-ca pubsub:latest
 
         export PUBSUB_TLS_CLIENT_CERT=/client-cert.pem
