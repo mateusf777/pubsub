@@ -12,6 +12,7 @@ import (
 )
 
 var expectedRemote = &net.IPAddr{IP: []byte{127, 0, 0, 1}}
+var expectedTenant = ""
 
 func TestConnHandler_Run(t *testing.T) {
 	type fields struct {
@@ -346,7 +347,7 @@ func TestMessageHandler(t *testing.T) {
 				go tt.args.close(closeCh)
 			}
 
-			mh := MessageHandler(mockPubSubConn, expectedRemote.String())
+			mh := MessageHandler(mockPubSubConn, expectedTenant, expectedRemote.String())
 
 			mh(testWriter, tt.args.raw, dataCh, closeCh)
 

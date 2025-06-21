@@ -13,6 +13,7 @@ const noIndex = -1
 type Message struct {
 	Subject string
 	Reply   string
+	Tenant  string
 	Data    []byte
 }
 
@@ -23,6 +24,7 @@ type HandlerSubject struct {
 	subject string
 	handler Handler
 	group   string
+	tenant  string
 }
 
 // Handler is the type of the function that will handle the message received from a PUB op
@@ -85,6 +87,12 @@ func WithReply(subject string) PubOpt {
 	}
 }
 
+func WithTenantPub(tenant string) PubOpt {
+	return func(msg *Message) {
+		msg.Tenant = tenant
+	}
+}
+
 // Publish constructs a message based in a PUB op and sends it to be routed to the subscribers
 func (ps *PubSub) Publish(subject string, data []byte, opts ...PubOpt) {
 	if !ps.hasSubscriber(subject) {
@@ -118,6 +126,12 @@ func WithGroup(group string) SubOpt {
 func WithID(id int) SubOpt {
 	return func(hs *HandlerSubject) {
 		hs.id = id
+	}
+}
+
+func WithTenantSub(tenant string) SubOpt {
+	return func(hs *HandlerSubject) {
+		hs.tenant = tenant
 	}
 }
 
@@ -222,6 +236,12 @@ func (r *msgRouter) Route(subHandlers []HandlerSubject, msg Message) {
 	groups := make(map[string][]HandlerSubject)
 
 	for _, hs := range subHandlers {
+		slog.Info("Routing message", "handler_tenant", hs.tenant, "message_tenant", msg.Tenant)
+		if hs.tenant != "" && hs.tenant != msg.Tenant {
+			slog.Debug("Skipping handler for different tenant", "handler_tenant", hs.tenant, "message_tenant", msg.Tenant)
+			continue
+		}
+
 		// prepare groups for load balancing
 		if hs.group != "" {
 			handlers := groups[hs.group]
