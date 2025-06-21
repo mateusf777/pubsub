@@ -120,8 +120,12 @@ jobs:
       run: |
         echo "${{ secrets.TLS_CERT }}" > fullchain.pem
         echo "${{ secrets.TLS_KEY }}" > privkey.pem
+        echo "${{ secrets.TLS_CA }}" > myca-cert.pem
+        echo "${{ secrets.CLIENT_CERT }}" > client-cert.pem
+        echo "${{ secrets.CLIENT_KEY }}" > client-key.pem
+        echo "${{ secrets.INVALID_CLIENT_CERT }}" > invalid-client-cert.pem
+        echo "${{ secrets.INVALID_CLIENT_KEY }}" > invalid-client-key.pem
 
-    
     - name: Integration Tests
       run: |
         cd example/integration
