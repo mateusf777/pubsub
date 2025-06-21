@@ -10,7 +10,7 @@ This project was inspired by the [NATS protocol](https://docs.nats.io/nats-proto
 
 ### Security Warning
 
-🚨 **This implementation is under development. Authentication is ongoing.** Use it for learning and experimentation only.
+🚨 **This implementation is under development.** Use it for learning and experimentation only.
 
 ---
 
