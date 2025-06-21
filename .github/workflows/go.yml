@@ -153,10 +153,15 @@ jobs:
             -e PUBSUB_TLS_CA=/myca-cert.pem \
             -e PUBSUB_ADDRESS=0.0.0.0:9443 \
             -p 9443:9443 \
-            -v "$CERT_DIR/fullchain.pem":/fullchain.pem \
-            -v "$CERT_DIR/privkey.pem":/privkey.pem \
-            -v "$CERT_DIR/myca-cert.pem":/myca-cert.pem \
+            -v ${{ github.workspace }}/fullchain.pem":/fullchain.pem \
+            -v ${{ github.workspace }}/privkey.pem":/privkey.pem \
+            -v ${{ github.workspace }}/myca-cert.pem":/myca-cert.pem \
             --name test-tls-ca pubsub:latest
+
+        export PUBSUB_TLS_CLIENT_CERT=/client-cert.pem
+        export PUBSUB_TLS_CLIENT_KEY=/client-key.pem
+        export PUBSUB_TLS_INVALID_CLIENT_CERT=/invalid-client-cert.pem
+        export PUBSUB_TLS_INVALID_CLIENT_KEY=/invalid-client-key.pem
 
         go test -race -run '^(TestConnectTLSNoCert|TestConnectTLSInvalidCert|TestConnectTLS)$' .
         docker stop test-tls-ca        
