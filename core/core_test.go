@@ -98,7 +98,6 @@ func TestNewConnectionHandler(t *testing.T) {
 			assert.NotNil(t, r.reader)
 			assert.NotNil(t, r.activity)
 			assert.NotNil(t, r.dataCh)
-			assert.Equal(t, 1024, len(r.buffer))
 
 			assert.NotNil(t, got.msgProcessor)
 			m := got.msgProcessor.(*MessageProcessor)
@@ -139,7 +138,7 @@ func TestConnectionHandler_Handle(t *testing.T) {
 			name: "Handle",
 			fields: fields{
 				reader: func(m *MockConnReader) {
-					m.On("Read").Return().Once()
+					m.On("Read", mock.Anything).Return().Once()
 				},
 				msgProcessor: func(m *MockMsgProcessor) {
 					m.On("Process", mock.Anything).Return().Once()
@@ -346,7 +345,7 @@ func TestConnectionReader_Read(t *testing.T) {
 			wgP.Add(1)
 			go func() {
 				defer wgP.Done()
-				go cr.Read()
+				go cr.Read(context.Background())
 			}()
 
 			_, _ = testWriter.Write(OpPing)

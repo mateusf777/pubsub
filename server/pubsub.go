@@ -236,7 +236,6 @@ func (r *msgRouter) Route(subHandlers []HandlerSubject, msg Message) {
 	groups := make(map[string][]HandlerSubject)
 
 	for _, hs := range subHandlers {
-		slog.Info("Routing message", "handler_tenant", hs.tenant, "message_tenant", msg.Tenant)
 		if hs.tenant != "" && hs.tenant != msg.Tenant {
 			slog.Debug("Skipping handler for different tenant", "handler_tenant", hs.tenant, "message_tenant", msg.Tenant)
 			continue

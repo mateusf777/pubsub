@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -103,7 +104,7 @@ var (
 )
 
 type ConnReader interface {
-	Read()
+	Read(ctx context.Context)
 }
 
 type MsgProcessor interface {
@@ -140,7 +141,7 @@ func NewConnectionHandler(cfg ConnectionHandlerConfig) (*ConnectionHandler, erro
 		return nil, errors.New("the attributes Conn and MsgHandler are required")
 	}
 
-	data := make(chan []byte)
+	data := make(chan []byte, 256)
 	activity := make(chan struct{})
 	closeHandler := make(chan struct{})
 
@@ -149,12 +150,12 @@ func NewConnectionHandler(cfg ConnectionHandlerConfig) (*ConnectionHandler, erro
 	}
 
 	if cfg.CloseTimeout <= 0 {
-		cfg.CloseTimeout = 10 * time.Second
+		cfg.CloseTimeout = time.Minute
 	}
 
 	reader := &ConnectionReader{
 		reader:   cfg.Conn,
-		buffer:   make([]byte, 1024),
+		buffer:   make([]byte, 16*1024),
 		dataCh:   data,
 		activity: activity,
 	}
@@ -192,7 +193,7 @@ func (ch *ConnectionHandler) Handle() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go ch.reader.Read()
+	go ch.reader.Read(ctx)
 
 	go ch.msgProcessor.Process(ctx)
 
@@ -224,10 +225,6 @@ func (ch *ConnectionHandler) Close() {
 	if err := ch.conn.Close(); err != nil {
 		l.Warn("conn.Close()", "error", err)
 	}
-
-	close(ch.close)
-	close(ch.activity)
-	close(ch.data)
 
 	l.Info("Close Connection", "remote", remote)
 }
@@ -267,11 +264,29 @@ type ConnectionReader struct {
 	activity chan<- struct{}
 }
 
+var bufferPool = sync.Pool{
+	New: func() any {
+		return make([]byte, 0, 16*1024)
+	},
+}
+
 // Read connection stream, adds data to buffer, split messages and send them to the channel.
-func (cr *ConnectionReader) Read() {
+func (cr *ConnectionReader) Read(ctx context.Context) {
+	defer close(cr.dataCh)
+	defer close(cr.activity)
+
 	l := logger.With("location", "ConnectionReader.Read()")
-	accumulator := Empty
+
+	var accumulator []byte
 	for {
+		select {
+		case <-ctx.Done():
+			l.Info("Context canceled, stopping reader")
+			return
+		default:
+
+		}
+
 		n, err := cr.reader.Read(cr.buffer)
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) {
@@ -287,10 +302,13 @@ func (cr *ConnectionReader) Read() {
 
 		toBeSplit := BuildBytes(accumulator, cr.buffer[:n])
 		messages := bytes.Split(toBeSplit, CRLF)
-		accumulator = Empty
+		accumulator = nil
 
 		if !bytes.HasSuffix(cr.buffer[:n], CRLF) && !bytes.Equal(cr.buffer[:n], ControlC) {
-			accumulator = messages[len(messages)-1]
+			accumulator = bufferPool.Get().([]byte)
+			accumulator = accumulator[:len(messages[len(messages)-1])]
+			copy(accumulator, messages[len(messages)-1])
+
 			messages = messages[:len(messages)-1]
 		}
 
@@ -298,10 +316,17 @@ func (cr *ConnectionReader) Read() {
 			messages = messages[:len(messages)-1]
 		}
 
-		l.Debug("messages", "messages", messages)
+		//l.Debug("messages", "messages", messages)
 		for _, msg := range messages {
-			l.Debug("Send msg to dataCh", "msg", string(msg))
-			cr.dataCh <- msg
+			select {
+			case <-ctx.Done():
+				l.Info("Context canceled while sending message")
+				return
+			case cr.dataCh <- msg:
+				if l.Enabled(ctx, slog.LevelDebug) {
+					l.Debug("Send msg to dataCh", "msg", string(msg))
+				}
+			}
 		}
 	}
 }

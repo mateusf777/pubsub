@@ -97,6 +97,7 @@ func Connect(address string, opts ...ConnectOption) (*Client, error) {
 		if err != nil {
 			return nil, fmt.Errorf("post-handshake read failed: %v", err)
 		}
+		tlsConn.SetReadDeadline(time.Time{})
 	}
 
 	rt := newMsgRouter()
