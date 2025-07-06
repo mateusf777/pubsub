@@ -39,7 +39,6 @@ type PubSub struct {
 	msgCh       chan Message
 	handlersMap *sync.Map
 	router      Router
-	running     bool
 }
 
 // PubSubConfig it's the optional configuration for creating a PubSub
@@ -62,11 +61,9 @@ func NewPubSub(cfg PubSubConfig) *PubSub {
 		msgCh:       cfg.MsgCh,
 		handlersMap: cfg.HandlersMap,
 		router:      &msgRouter{},
-		running:     false,
 	}
 
 	go ps.run()
-	ps.running = true
 
 	return &ps
 }
@@ -74,7 +71,6 @@ func NewPubSub(cfg PubSubConfig) *PubSub {
 // Stop the PubSub router
 func (ps *PubSub) Stop() {
 	close(ps.msgCh)
-	ps.running = false
 }
 
 // PubOpt optional parameter pattern for Publish

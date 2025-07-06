@@ -1,3 +1,9 @@
+@REM You'll have to remove all the -race if you don't have gcc installed
+@REM set CGO_ENABLED=1 && set "CERT_DIR=C:\path\to\cert" && set PUBSUB_TLS_CLIENT_CERT=%CERT_DIR%\client-cert.pem && set PUBSUB_TLS_CLIENT_KEY=%CERT_DIR%\client-key.pem && set PUBSUB_TLS_INVALID_CLIENT_CERT=%CERT_DIR%\invalid-client-cert.pem && set PUBSUB_TLS_INVALID_CLIENT_KEY=%CERT_DIR%\invalid-client-key.pem && set PUBSUB_TLS_CLIENT_CERT_B=%CERT_DIR%\client-b-cert.pem && set PUBSUB_TLS_CLIENT_KEY_B=%CERT_DIR%\client-b-key.pem && test.bat
+
+@REM For git-bash
+@REM CERT_DIR=/c/path/to/cert PUBSUB_TLS_CLIENT_CERT=$CERT_DIR/client-cert.pem PUBSUB_TLS_CLIENT_KEY=$CERT_DIR/client-key.pem PUBSUB_TLS_INVALID_CLIENT_CERT=$CERT_DIR/invalid-client-cert.pem PUBSUB_TLS_INVALID_CLIENT_KEY=$CERT_DIR/invalid-client-key.pem PUBSUB_TLS_CLIENT_CERT_B=$CERT_DIR/client-b-cert.pem PUBSUB_TLS_CLIENT_KEY_B=$CERT_DIR/client-b-key.pem ./test.bat
+
 @echo off
 
 go clean -testcache
