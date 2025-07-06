@@ -56,7 +56,7 @@ func TestNewPubSub(t *testing.T) {
 					t.Errorf("the pubsub was not started and timed out")
 					return
 				default:
-					if got.running {
+					if got.router != nil {
 						return
 					}
 				}
