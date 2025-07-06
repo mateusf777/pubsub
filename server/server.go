@@ -25,12 +25,19 @@ type ServerOption func(*serverConfig)
 
 type serverConfig struct {
 	tlsConfig *TLSConfig
+	pubsub    *PubSub
 }
 
 // WithTLS enables TLS using the provided certificate and key files.
 func WithTLS(tlsConfig TLSConfig) ServerOption {
 	return func(cfg *serverConfig) {
 		cfg.tlsConfig = &tlsConfig
+	}
+}
+
+func WithPubSub(pubsub *PubSub) ServerOption {
+	return func(cfg *serverConfig) {
+		cfg.pubsub = pubsub
 	}
 }
 
@@ -43,6 +50,10 @@ func Run(address string, opts ...ServerOption) {
 	cfg := &serverConfig{}
 	for _, opt := range opts {
 		opt(cfg)
+	}
+
+	if cfg.pubsub == nil {
+		cfg.pubsub = NewPubSub(PubSubConfig{})
 	}
 
 	address = strings.TrimSpace(address)
@@ -71,21 +82,24 @@ func Run(address string, opts ...ServerOption) {
 		}
 	}()
 
-	go acceptClients(l, cfg.tlsConfig != nil)
+	lh := listenerHandler{l, cfg.pubsub, cfg.tlsConfig != nil}
+	go lh.handle()
 
 	slog.Info("PubSub accepting connections", "address", address, "tls", cfg.tlsConfig != nil)
 	Wait()
 	slog.Info("Stopping PubSub")
 }
 
-// acceptClients starts a concurrent handler for each connection
-func acceptClients(l net.Listener, isTls bool) {
-	// PubSub engine is unique per instance.
-	ps := NewPubSub(PubSubConfig{})
-	defer ps.Stop()
+type listenerHandler struct {
+	listener net.Listener
+	ps       *PubSub
+	isTls    bool
+}
 
+// listen starts a concurrent handler for each connection
+func (lh *listenerHandler) handle() {
 	for {
-		c, err := l.Accept()
+		c, err := lh.listener.Accept()
 		if err != nil {
 			if strings.Contains(err.Error(), core.ClosedErr) {
 				slog.Debug("Server.acceptClient (ClosedErr)", "error", err)
@@ -95,54 +109,59 @@ func acceptClients(l net.Listener, isTls bool) {
 			return
 		}
 
-		var tenant string
+		initilizeConnectionHanlder(c, lh.ps, lh.isTls)
 
-		if isTls {
-			tlsConn, ok := c.(*tls.Conn)
-			if !ok {
-				slog.Error("Server.acceptClients", "error", "expected *tls.Conn")
-				tlsConn.Close()
-				continue
-			}
-			if err := tlsConn.Handshake(); err != nil {
-				slog.Error("Server.acceptClients Handshake", "error", err)
-				tlsConn.Close()
-				continue
-			}
-
-			tlsConnState := tlsConn.ConnectionState()
-			if len(tlsConnState.PeerCertificates) > 0 {
-				tenant = tlsConnState.PeerCertificates[0].SerialNumber.String()
-				slog.Info("Server.acceptClients", "remote", c.RemoteAddr().String(), "tenant", tenant)
-			} else {
-				slog.Warn("Server.acceptClients, verify if you need to configure the server with CA cert to avoid this", "error", "no peer certificates found in TLS connection")
-			}
-		}
-
-		ch, err := core.NewConnectionHandler(core.ConnectionHandlerConfig{
-			Conn:       c,
-			MsgHandler: MessageHandler(ps, tenant, c.RemoteAddr().String()),
-		})
-		if err != nil {
-			slog.Error("NewConnectionHandler", "error", err)
-			continue
-		}
-
-		serverConnHandler := &ConnHandler{
-			conn:        c,
-			connHandler: ch,
-			pubSub:      ps,
-			remote:      c.RemoteAddr().String(),
-		}
-
-		if err := serverConnHandler.Connect(); err != nil {
-			slog.Error("Connect", "error", err)
-			continue
-		}
-
-		slog.Info("New connection", "remote", serverConnHandler.remote)
-		go serverConnHandler.Run()
 	}
+}
+
+func initilizeConnectionHanlder(c net.Conn, ps *PubSub, isTls bool) {
+	var tenant string
+
+	if isTls {
+		tlsConn, ok := c.(*tls.Conn)
+		if !ok {
+			slog.Error("Server.acceptClients", "error", "expected *tls.Conn")
+			tlsConn.Close()
+			return
+		}
+		if err := tlsConn.Handshake(); err != nil {
+			slog.Error("Server.acceptClients Handshake", "error", err)
+			tlsConn.Close()
+			return
+		}
+
+		tlsConnState := tlsConn.ConnectionState()
+		if len(tlsConnState.PeerCertificates) > 0 {
+			tenant = tlsConnState.PeerCertificates[0].SerialNumber.String()
+			slog.Info("Server.acceptClients", "remote", c.RemoteAddr().String(), "tenant", tenant)
+		} else {
+			slog.Warn("Server.acceptClients, verify if you need to configure the server with CA cert to avoid this", "error", "no peer certificates found in TLS connection")
+		}
+	}
+
+	ch, err := core.NewConnectionHandler(core.ConnectionHandlerConfig{
+		Conn:       c,
+		MsgHandler: MessageHandler(ps, tenant, c.RemoteAddr().String()),
+	})
+	if err != nil {
+		slog.Error("NewConnectionHandler", "error", err)
+		return
+	}
+
+	serverConnHandler := &ConnHandler{
+		conn:        c,
+		connHandler: ch,
+		pubSub:      ps,
+		remote:      c.RemoteAddr().String(),
+	}
+
+	if err := serverConnHandler.Connect(); err != nil {
+		slog.Error("Connect", "error", err)
+		return
+	}
+
+	slog.Info("New connection", "remote", serverConnHandler.remote)
+	go serverConnHandler.Run()
 }
 
 // Wait for system signals (SIGINT, SIGTERM)
