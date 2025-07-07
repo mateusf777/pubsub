@@ -8,7 +8,7 @@ This project is a **learning-oriented** implementation of a basic pub/sub server
 
 This project was inspired by the [NATS protocol](https://docs.nats.io/nats-protocol/nats-protocol#protocol-messages). While it follows similar operations, it is not a replacement for NATS, nor does it aim to be production-ready. If you need a robust pub/sub system for real-world use, consider using [NATS](https://nats.io).
 
-### Security Warning
+### Warning
 
 🚨 **This implementation is under development.** Use it for learning and experimentation only.
 
