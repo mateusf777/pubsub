@@ -13,36 +13,41 @@ import (
 	"github.com/mateusf777/pubsub/core"
 )
 
-// TLSConfig holds the certificate and key file paths.
+// TLSConfig holds the certificate, key, and optional CA file paths for TLS setup.
+// Used to configure secure transport and client certificate validation.
 type TLSConfig struct {
-	CertFile string
-	KeyFile  string
-	CAFile   string
+	CertFile string // Path to the TLS certificate file.
+	KeyFile  string // Path to the TLS private key file.
+	CAFile   string // Path to the CA certificate file for client certificate validation (optional).
 }
 
 // ServerOption is a functional option for server configuration.
+// Used to customize server behavior (e.g., enabling TLS, injecting a PubSub engine).
 type ServerOption func(*serverConfig)
 
+// serverConfig holds the configuration for the server, including TLS and PubSub engine.
 type serverConfig struct {
-	tlsConfig *TLSConfig
-	pubsub    *PubSub
+	tlsConfig *TLSConfig // TLS configuration (if enabled).
+	pubsub    *PubSub    // PubSub engine instance.
 }
 
 // WithTLS enables TLS using the provided certificate and key files.
+// Optionally configures client certificate validation if CAFile is set.
 func WithTLS(tlsConfig TLSConfig) ServerOption {
 	return func(cfg *serverConfig) {
 		cfg.tlsConfig = &tlsConfig
 	}
 }
 
+// WithPubSub injects a custom PubSub engine into the server configuration.
 func WithPubSub(pubsub *PubSub) ServerOption {
 	return func(cfg *serverConfig) {
 		cfg.pubsub = pubsub
 	}
 }
 
-// Run starts to listen in the given address, optionally with TLS.
-// Pass WithTLS as an option to enable TLS.
+// Run starts the server, listening on the given address with optional TLS.
+// Pass WithTLS as an option to enable TLS. Handles graceful shutdown on SIGINT/SIGTERM.
 func Run(address string, opts ...ServerOption) {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
@@ -90,13 +95,16 @@ func Run(address string, opts ...ServerOption) {
 	slog.Info("Stopping PubSub")
 }
 
+// listenerHandler manages the main listener and handles incoming connections.
+// For each accepted connection, it initializes the connection handler and PubSub engine.
 type listenerHandler struct {
-	listener net.Listener
-	ps       *PubSub
-	isTls    bool
+	listener net.Listener // The network listener (TCP or TLS).
+	ps       *PubSub      // PubSub engine instance.
+	isTls    bool         // Indicates if TLS is enabled.
 }
 
-// listen starts a concurrent handler for each connection
+// handle accepts new connections and starts a handler for each connection.
+// Handles both plain TCP and TLS connections.
 func (lh *listenerHandler) handle() {
 	for {
 		c, err := lh.listener.Accept()
@@ -110,10 +118,11 @@ func (lh *listenerHandler) handle() {
 		}
 
 		initilizeConnectionHanlder(c, lh.ps, lh.isTls)
-
 	}
 }
 
+// initilizeConnectionHanlder initializes a new connection handler for the accepted connection.
+// Performs TLS handshake and extracts tenant information if TLS is enabled.
 func initilizeConnectionHanlder(c net.Conn, ps *PubSub, isTls bool) {
 	var tenant string
 
@@ -164,13 +173,16 @@ func initilizeConnectionHanlder(c net.Conn, ps *PubSub, isTls bool) {
 	go serverConnHandler.Run()
 }
 
-// Wait for system signals (SIGINT, SIGTERM)
+// Wait blocks until a system signal (SIGINT or SIGTERM) is received.
+// Used for graceful shutdown of the server.
 func Wait() {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 	<-signals
 }
 
+// loadTLSConfig loads and configures the TLS settings for the server.
+// Loads the certificate and key, and if a CA is provided, enables client certificate validation (mTLS).
 func loadTLSConfig(cfg *TLSConfig) (*tls.Config, error) {
 	cert, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
 	if err != nil {
@@ -189,11 +201,13 @@ func loadTLSConfig(cfg *TLSConfig) (*tls.Config, error) {
 		}
 
 		caPool := x509.NewCertPool()
+		// Attempt to append the CA certificate to the pool for client certificate validation.
+		// This enables mutual TLS (mTLS) if a CA is configured.
 		if !caPool.AppendCertsFromPEM(caCertFile) {
 			slog.Error("Failed to append CA certificate to pool", "error", err)
 			return nil, err
 		}
-		tlsCfg.ClientCAs = caPool
+		tlsCfg.ClientCAs = caPool // Set the CA pool for client certificate verification.
 	}
 	return tlsCfg, nil
 }

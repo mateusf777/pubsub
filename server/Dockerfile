@@ -1,3 +1,10 @@
+# -----------------------------------------------------------------------------
+# Dockerfile for building the pubsub server binary and packaging it in a minimal
+# distroless container. This image is primarily used for integration testing,
+# but can also be used to run the server in production.
+#
+# Expects configuration via environment variables (see main.go for details).
+# -----------------------------------------------------------------------------
 FROM golang:1.23.4 AS builder
 
 WORKDIR /app

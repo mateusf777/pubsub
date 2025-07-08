@@ -6,8 +6,9 @@ import (
 	"github.com/mateusf777/pubsub/server"
 )
 
-// ATTENTION: This server has NO SECURITY whatsoever
-// If you expose it you're on your own.
+// ATTENTION: This server supports TLS for secure transport and, if a CA is configured,
+// will validate client certificates for authentication. If you run without TLS or CA,
+// connections will not be encrypted or authenticated.
 const defaultAddress = "0.0.0.0:9999"
 
 func main() {
