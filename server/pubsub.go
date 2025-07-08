@@ -9,7 +9,7 @@ import (
 
 const noIndex = -1 // Sentinel value for not found index in handler slices.
 
-// Message routed from a PUB op to handlers previously registerer by SUB ops.
+// Message routed from a PUB op to handlers previously registered by SUB ops.
 // Represents a message in the pubsub system, including subject, reply subject, tenant, and payload.
 type Message struct {
 	Subject string // The subject/topic of the message.
