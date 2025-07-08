@@ -13,25 +13,30 @@ import (
 )
 
 const (
-	IdleTimeout = 60 * time.Second
-	ClosedErr   = "use of closed network connection"
+	IdleTimeout = 60 * time.Second                   // Default idle timeout for connections in the core package.
+	ClosedErr   = "use of closed network connection" // Error string used to identify closed network connections.
 )
 
 // logger is initialized with error level for the core package.
+// Used throughout the core package for structured logging.
 var logger *slog.Logger
 
+// Info holds client identification and authentication nonce information.
+// Used in the INFO protocol message.
 type Info struct {
-	ClientID string `json:"client_id"`
-	Nonce    string `json:"nonce"`
+	ClientID string `json:"client_id"` // Unique identifier for the client.
+	Nonce    string `json:"nonce"`     // Nonce for authentication.
 }
 
 func init() {
+	// Initializes the logger with error level and attaches the "core" library label.
 	logHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError})
 	logger = slog.New(logHandler)
 	logger = logger.With("lib", "core")
 }
 
 // SetLogLevel allows core user to configure a different level.
+// Dynamically sets the log level for the core logger.
 func SetLogLevel(level slog.Level) {
 	logHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})
 	logger = slog.New(logHandler)
@@ -43,86 +48,102 @@ var (
 	// OpPub (PUB <subject> [reply_id] \r\n [msg] \r\n).
 	// Publish a message to a subject with optional reply subject.
 	// Client -> Server
+	// Used to identify PUB commands in the protocol.
 	OpPub = []byte{'P', 'U', 'B'}
 
 	// OpSub (SUB <subject> <sub_id> [group] \r\n).
 	// Subscribe to a subject with optional group grouping.
 	// Client -> Server
+	// Used to identify SUB commands in the protocol.
 	OpSub = []byte{'S', 'U', 'B'}
 
 	// OpUnsub (UNSUB <sub_id> \r\n)
 	// Unsubscribes from a subject
 	// Client -> Server
+	// Used to identify UNSUB commands in the protocol.
 	OpUnsub = []byte{'U', 'N', 'S', 'U', 'B'}
 
 	// OpStop (STOP \r\n)
 	// Tells server to clean up connection.
 	// Client -> Server
+	// Used to identify STOP commands in the protocol.
 	OpStop = []byte{'S', 'T', 'O', 'P'}
 
 	// OpPong (PONG \r\n)
 	// Keep-alive response
 	// Client -> Server
+	// Used to identify PONG responses in the protocol.
 	OpPong = []byte{'P', 'O', 'N', 'G'}
 
 	// OpInfo (INFO {"client_id":<clientID>, "nonce":<nonce>} \r\n).
 	// Informs the clientID in the server and sends a nonce for authentication
 	// Server -> Client
+	// Used to identify INFO messages in the protocol.
 	OpInfo = []byte{'I', 'N', 'F', 'O'}
 
 	// OpPing (PING \r\n)
 	// Keep-alive message
 	// Server -> Client
+	// Used to identify PING messages in the protocol.
 	OpPing = []byte{'P', 'I', 'N', 'G'}
 
 	// OpMsg (MSG <subject> <sub_id> [reply-to] \r\n [payload] \r\n)
 	// Delivers a message to a subscriber
 	// Server -> Client
+	// Used to identify MSG messages in the protocol.
 	OpMsg = []byte{'M', 'S', 'G'}
 
 	// OpOK (+OK \r\n)
 	// Acknowledges protocol messages.
 	// Server -> Client
+	// Used to identify OK responses in the protocol.
 	OpOK = []byte{'+', 'O', 'K'}
 
 	// OpERR (-ERR <error> \r\n)
 	// Indicates protocol error.
 	// Server -> Client
+	// Used to identify ERR responses in the protocol.
 	OpERR = []byte{'-', 'E', 'R', 'R'}
 )
 
 // Helper values
 var (
-	Empty []byte
+	Empty []byte // Represents an empty byte slice.
 
-	CRLF     = []byte{'\r', '\n'}
-	Space    = []byte{' '}
-	OK       = BuildBytes(OpOK, CRLF)
-	ControlC = []byte{255, 244, 255, 253, 6}
-	Stop     = BuildBytes(OpStop, CRLF)
-	Ping     = BuildBytes(OpPing, CRLF)
+	CRLF     = []byte{'\r', '\n'}            // Carriage return and line feed.
+	Space    = []byte{' '}                   // Space character.
+	OK       = BuildBytes(OpOK, CRLF)        // Prebuilt OK response.
+	ControlC = []byte{255, 244, 255, 253, 6} // Control-C sequence for telnet.
+	Stop     = BuildBytes(OpStop, CRLF)      // Prebuilt STOP command.
+	Ping     = BuildBytes(OpPing, CRLF)      // Prebuilt PING command.
 )
 
+// ConnReader abstracts reading from a connection and sending data to a channel.
 type ConnReader interface {
 	Read(ctx context.Context)
 }
 
+// MsgProcessor abstracts processing messages from a channel.
 type MsgProcessor interface {
 	Process(ctx context.Context)
 }
 
+// KeepAliveEngine abstracts running a keep-alive mechanism.
 type KeepAliveEngine interface {
 	Run(ctx context.Context)
 }
 
+// ConnectionHandlerConfig holds configuration for creating a ConnectionHandler.
 type ConnectionHandlerConfig struct {
-	Conn         net.Conn
-	MsgHandler   MessageHandler
-	IsClient     bool
-	IdleTimeout  time.Duration
-	CloseTimeout time.Duration
+	Conn         net.Conn       // The network connection.
+	MsgHandler   MessageHandler // Handler for incoming messages.
+	IsClient     bool           // True if this is a client connection.
+	IdleTimeout  time.Duration  // Idle timeout for keep-alive.
+	CloseTimeout time.Duration  // Timeout for closing the connection.
 }
 
+// ConnectionHandler manages the lifecycle and coordination of a connection,
+// including reading, message processing, and keep-alive.
 type ConnectionHandler struct {
 	conn         net.Conn
 	reader       ConnReader
@@ -135,15 +156,17 @@ type ConnectionHandler struct {
 	closeTimeout time.Duration
 }
 
+// NewConnectionHandler creates and initializes a new ConnectionHandler
+// with the provided configuration.
 func NewConnectionHandler(cfg ConnectionHandlerConfig) (*ConnectionHandler, error) {
 
 	if cfg.Conn == nil || cfg.MsgHandler == nil {
 		return nil, errors.New("the attributes Conn and MsgHandler are required")
 	}
 
-	data := make(chan []byte, 256)
-	activity := make(chan struct{})
-	closeHandler := make(chan struct{})
+	data := make(chan []byte, 256)      // Channel for incoming data.
+	activity := make(chan struct{})     // Channel for activity signaling.
+	closeHandler := make(chan struct{}) // Channel for signaling closure.
 
 	if cfg.IdleTimeout <= 0 {
 		cfg.IdleTimeout = IdleTimeout
@@ -189,6 +212,8 @@ func NewConnectionHandler(cfg ConnectionHandlerConfig) (*ConnectionHandler, erro
 	}, nil
 }
 
+// Handle starts the connection's reader, message processor, and keep-alive goroutines,
+// and blocks until the connection is closed.
 func (ch *ConnectionHandler) Handle() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -199,9 +224,11 @@ func (ch *ConnectionHandler) Handle() {
 
 	go ch.keepAlive.Run(ctx)
 
-	<-ch.close
+	<-ch.close // Wait for close signal.
 }
 
+// Close gracefully closes the connection, optionally waiting for the server to close first
+// if this is a client connection.
 func (ch *ConnectionHandler) Close() {
 	l := logger.With("location", "ConnectionHandler.Close()")
 
@@ -231,6 +258,7 @@ func (ch *ConnectionHandler) Close() {
 
 // waitServerClose waits the connection to be closed by the server
 // This assures all messages were consumed and processed.
+// Used only for client connections to ensure graceful shutdown.
 func (ch *ConnectionHandler) waitServerClose(ctx context.Context) {
 	l := logger.With("location", "Conn.waitServerClose()")
 
@@ -257,13 +285,15 @@ loop:
 }
 
 // ConnectionReader implements Read.
+// Reads from the network connection, splits messages, and sends them to dataCh.
 type ConnectionReader struct {
-	reader   io.Reader
-	buffer   []byte
-	dataCh   chan<- []byte
-	activity chan<- struct{}
+	reader   io.Reader       // The underlying reader (usually net.Conn).
+	buffer   []byte          // Buffer for reading data.
+	dataCh   chan<- []byte   // Channel to send parsed messages.
+	activity chan<- struct{} // Channel to signal activity for keep-alive.
 }
 
+// bufferPool is used to reuse buffers for message accumulation and reduce allocations.
 var bufferPool = sync.Pool{
 	New: func() any {
 		return make([]byte, 0, 16*1024)
@@ -271,6 +301,7 @@ var bufferPool = sync.Pool{
 }
 
 // Read connection stream, adds data to buffer, split messages and send them to the channel.
+// Handles context cancellation and connection closure.
 func (cr *ConnectionReader) Read(ctx context.Context) {
 	defer close(cr.dataCh)
 	defer close(cr.activity)
@@ -331,16 +362,21 @@ func (cr *ConnectionReader) Read(ctx context.Context) {
 	}
 }
 
+// MessageHandler defines the signature for message processing callbacks.
+// Used by MessageProcessor to handle incoming messages.
 type MessageHandler func(writer io.Writer, data []byte, dataCh <-chan []byte, close chan<- struct{})
 
+// MessageProcessor processes messages from the data channel using the provided handler.
 type MessageProcessor struct {
-	writer  io.Writer
-	handler MessageHandler
-	remote  string
-	data    <-chan []byte
-	close   chan<- struct{}
+	writer  io.Writer       // Writer to send responses.
+	handler MessageHandler  // Handler function for processing messages.
+	remote  string          // Remote address for logging.
+	data    <-chan []byte   // Channel to receive messages.
+	close   chan<- struct{} // Channel to signal closure.
 }
 
+// Process reads messages from the data channel and invokes the handler.
+// Exits when the context is canceled or the data channel is closed.
 func (m *MessageProcessor) Process(ctx context.Context) {
 	l := logger.With("location", "MessageProcessor.Process()")
 	for {
@@ -359,16 +395,18 @@ func (m *MessageProcessor) Process(ctx context.Context) {
 }
 
 // KeepAlive can run a keep-alive mechanism for a connection between PubSub server and client.
+// Monitors activity and sends PINGs if the connection is idle.
 type KeepAlive struct {
-	writer      io.Writer
-	remote      string
-	activity    <-chan struct{}
-	close       chan<- struct{}
-	idleTimeout time.Duration
+	writer      io.Writer       // Writer to send PINGs.
+	remote      string          // Remote address for logging.
+	activity    <-chan struct{} // Channel to receive activity signals.
+	close       chan<- struct{} // Channel to signal closure.
+	idleTimeout time.Duration   // Idle timeout duration.
 }
 
 // Run KeepAlive mechanism. Normal traffic resets idle timeout. It sends PING to remote if idle timeout happens.
 // After two pings without response, sends signal to close connection.
+// Exits when the context is canceled or the activity channel is closed.
 func (k *KeepAlive) Run(ctx context.Context) {
 	l := logger.With("location", "KeepAlive.Run()")
 	checkTimeout := time.NewTicker(k.idleTimeout)
@@ -412,6 +450,7 @@ loop:
 }
 
 // BuildBytes helps create a slice of bytes from multiple slices of bytes.
+// Used for constructing protocol messages efficiently.
 func BuildBytes(b ...[]byte) []byte {
 	return bytes.Join(b, nil)
 }
