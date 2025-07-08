@@ -9,6 +9,9 @@ import (
 	"github.com/mateusf777/pubsub/core"
 )
 
+// MessageHandler returns a core.MessageHandler for the client.
+// It processes protocol messages received from the server, handles PING/PONG/OK/ERR/MSG commands,
+// and dispatches MSG messages to the router.
 func MessageHandler(router router) core.MessageHandler {
 
 	return func(writer io.Writer, raw []byte, dataCh <-chan []byte, _ chan<- struct{}) {
@@ -22,19 +25,24 @@ func MessageHandler(router router) core.MessageHandler {
 		var result []byte
 		switch {
 		case bytes.Equal(bytes.ToUpper(data), core.OpPing):
+			// Respond to server PING with PONG.
 			result = core.BuildBytes(core.OpPong, core.CRLF)
 
 		case bytes.Equal(bytes.ToUpper(data), core.OpPong):
+			// Ignore PONG responses.
 			return
 
 		case bytes.Equal(bytes.ToUpper(data), core.OpOK):
+			// Ignore OK responses.
 			return
 
 		case bytes.Equal(bytes.ToUpper(data), core.OpERR):
+			// Log protocol errors.
 			l.Error("OpERR", "value", data)
 			return
 
 		case bytes.HasPrefix(bytes.ToUpper(data), core.OpMsg):
+			// Handle MSG command: parse and route the message.
 			l.Debug("in opMsg...")
 			l.Debug("calling handleMsg")
 			handleMsg(router, data, dataCh)
@@ -59,6 +67,8 @@ func MessageHandler(router router) core.MessageHandler {
 	}
 }
 
+// handleMsg parses a MSG protocol command and dispatches it to the appropriate subscription handler via the router.
+// It extracts the subject, subscriber ID, optional reply-to, and payload from the message.
 func handleMsg(router router, received []byte, dataCh <-chan []byte) {
 	l := logger.With("location", "handleMsg()")
 

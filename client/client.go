@@ -16,26 +16,34 @@ import (
 	"github.com/mateusf777/pubsub/core"
 )
 
-// Message contains data and metadata about a message sent from a publisher to a subscriber
+// Message contains data and metadata about a message sent from a publisher to a subscriber.
+// Used for both publishing and receiving messages in the client API.
 type Message struct {
-	Subject string
-	Reply   string
-	Data    []byte
+	Subject string // The subject/topic of the message.
+	Reply   string // Optional reply subject for request/reply patterns.
+	Data    []byte // Message payload.
 }
 
+// router defines the interface for managing subscription handlers and routing messages to them.
+// Used internally by the client to manage subscriptions and message delivery.
 type router interface {
 	route(msg *Message, subscriberID int) error
 	addSubHandler(handler Handler) int
 	removeSubHandler(subscriberID int)
 }
 
+// ConnectionHandler abstracts the lifecycle of a client connection.
+// Provides methods to handle and close the connection.
 type ConnectionHandler interface {
 	Handle()
 	Close()
 }
 
+// logger is the structured logger for the client package.
+// Initialized with error level by default.
 var logger *slog.Logger
 
+// SetLogLevel allows the user to configure the log level for the client package.
 func SetLogLevel(level slog.Level) {
 	logHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})
 	logger = slog.New(logHandler)
@@ -48,20 +56,25 @@ func init() {
 	logger = logger.With("lib", "client")
 }
 
+// ConnectOption is a functional option for configuring client connections.
+// Used to inject custom TLS configuration or other options.
 type ConnectOption func(*connectConfig)
 
+// connectConfig holds configuration for establishing a client connection.
 type connectConfig struct {
-	tlsConfig *tls.Config
+	tlsConfig *tls.Config // Optional TLS configuration for secure connections.
 }
 
 // WithTLSConfig allows passing a custom tls.Config for the client, including ServerName.
+// Use this to enable TLS or mTLS when connecting to the server.
 func WithTLSConfig(cfg *tls.Config) ConnectOption {
 	return func(c *connectConfig) {
 		c.tlsConfig = cfg
 	}
 }
 
-// Connect makes the connection with the server
+// Connect makes the connection with the server.
+// Applies any ConnectOptions (e.g., TLS), performs handshake, and returns a Client instance.
 func Connect(address string, opts ...ConnectOption) (*Client, error) {
 	logger.With("location", "Connect()").Debug("Connect")
 
@@ -123,18 +136,21 @@ func Connect(address string, opts ...ConnectOption) (*Client, error) {
 	return client, nil
 }
 
+// Client represents a connection to the pubsub server.
+// Provides methods for publishing, subscribing, unsubscribing, and request/reply.
 type Client struct {
-	connHandler ConnectionHandler
-	writer      io.Writer
-	router      router
-	generator   uniqueGenerator
+	connHandler ConnectionHandler // Underlying connection handler.
+	writer      io.Writer         // Writer for sending protocol messages.
+	router      router            // Subscription handler/router.
+	generator   uniqueGenerator   // Generator for unique reply subjects.
 }
 
+// Close gracefully closes the client connection.
 func (c *Client) Close() {
 	c.connHandler.Close()
 }
 
-// Publish sends a message for a subject
+// Publish sends a message for a subject.
 // Uses command PUB <subject> \n\r message \n\r
 func (c *Client) Publish(subject string, msg []byte) error {
 	result := core.BuildBytes(core.OpPub, core.Space, []byte(subject), core.CRLF, msg, core.CRLF)
@@ -147,7 +163,7 @@ func (c *Client) Publish(subject string, msg []byte) error {
 	return nil
 }
 
-// Subscribe registers a handler that listen for messages sent to a subjects
+// Subscribe registers a handler that listens for messages sent to a subject.
 // Uses SUB <subject> <sub.ID>
 func (c *Client) Subscribe(subject string, handler Handler) (int, error) {
 	subscriberID := c.router.addSubHandler(handler)
@@ -164,7 +180,7 @@ func (c *Client) Subscribe(subject string, handler Handler) (int, error) {
 	return subscriberID, nil
 }
 
-// Unsubscribe removes the handler from router and sends UNSUB to server
+// Unsubscribe removes the handler from router and sends UNSUB to server.
 // Uses UNSUB <sub.ID>
 func (c *Client) Unsubscribe(subject string, subscriberID int) error {
 	c.router.removeSubHandler(subscriberID)
@@ -181,7 +197,8 @@ func (c *Client) Unsubscribe(subject string, subscriberID int) error {
 	return nil
 }
 
-// QueueSubscribe as subscribe, but the server will randomly load balance among the handlers in the queue
+// QueueSubscribe registers a handler for a subject and queue group.
+// The server will randomly load balance among the handlers in the queue.
 // Uses SUB <subject> <sub.ID> <queue>
 func (c *Client) QueueSubscribe(subject string, queue string, handler Handler) (int, error) {
 	subscriberID := c.router.addSubHandler(handler)
@@ -197,13 +214,15 @@ func (c *Client) QueueSubscribe(subject string, queue string, handler Handler) (
 	return subscriberID, nil
 }
 
-// Request as publish, but blocks until receives a response from a subscriber
+// Request sends a request and blocks until a response is received from a subscriber.
 // Creates a subscription to receive reply: SUB <subject> REPLY.<ID>
 // Then publishes request PUB <subject> REPLY.<ID> \n\r message \n\r
 func (c *Client) Request(subject string, msg []byte) (*Message, error) {
 	return c.RequestWithCtx(context.Background(), subject, msg)
 }
 
+// RequestWithCtx sends a request with a context for timeout/cancellation.
+// Blocks until a response is received or the context is done.
 func (c *Client) RequestWithCtx(ctx context.Context, subject string, msg []byte) (*Message, error) {
 	l := logger.With("location", "Client.RequestWithCtx()")
 	l.Debug("RequestWithCtx")
@@ -244,6 +263,8 @@ func (c *Client) RequestWithCtx(ctx context.Context, subject string, msg []byte)
 	}
 }
 
+// Reply sends a reply to the reply subject of a received message.
+// If the message has no reply subject, does nothing.
 func (c *Client) Reply(msg *Message, data []byte) error {
 	if len(msg.Reply) == 0 {
 		return nil
@@ -251,12 +272,15 @@ func (c *Client) Reply(msg *Message, data []byte) error {
 	return c.Publish(msg.Reply, data)
 }
 
+// uniqueGenerator defines the interface for generating unique reply subjects or IDs.
 type uniqueGenerator interface {
 	nextUnique() string
 }
 
+// uniqueGen is the default implementation of uniqueGenerator using random UUIDs.
 type uniqueGen struct{}
 
+// nextUnique generates a random UUID string for use as a reply subject or unique ID.
 func (ug uniqueGen) nextUnique() string {
 	var unique [16]byte
 
