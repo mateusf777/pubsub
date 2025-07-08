@@ -3,6 +3,7 @@ package server
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"log/slog"
 	"net"
 	"os"
@@ -117,13 +118,13 @@ func (lh *listenerHandler) handle() {
 			return
 		}
 
-		initilizeConnectionHanlder(c, lh.ps, lh.isTls)
+		initializeConnectionHanlder(c, lh.ps, lh.isTls)
 	}
 }
 
-// initilizeConnectionHanlder initializes a new connection handler for the accepted connection.
+// initializeConnectionHanlder initializes a new connection handler for the accepted connection.
 // Performs TLS handshake and extracts tenant information if TLS is enabled.
-func initilizeConnectionHanlder(c net.Conn, ps *PubSub, isTls bool) {
+func initializeConnectionHanlder(c net.Conn, ps *PubSub, isTls bool) {
 	var tenant string
 
 	if isTls {
@@ -204,8 +205,8 @@ func loadTLSConfig(cfg *TLSConfig) (*tls.Config, error) {
 		// Attempt to append the CA certificate to the pool for client certificate validation.
 		// This enables mutual TLS (mTLS) if a CA is configured.
 		if !caPool.AppendCertsFromPEM(caCertFile) {
-			slog.Error("Failed to append CA certificate to pool", "error", err)
-			return nil, err
+			slog.Error("Failed to append CA certificate to pool")
+			return nil, errors.New("failed to append CA certificate to pool")
 		}
 		tlsCfg.ClientCAs = caPool // Set the CA pool for client certificate verification.
 	}
