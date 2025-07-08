@@ -3,7 +3,7 @@ package server
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"os"
@@ -118,24 +118,24 @@ func (lh *listenerHandler) handle() {
 			return
 		}
 
-		initializeConnectionHanlder(c, lh.ps, lh.isTls)
+		initializeConnectionHandler(c, lh.ps, lh.isTls)
 	}
 }
 
-// initializeConnectionHanlder initializes a new connection handler for the accepted connection.
+// initializeConnectionHandler initializes a new connection handler for the accepted connection.
 // Performs TLS handshake and extracts tenant information if TLS is enabled.
-func initializeConnectionHanlder(c net.Conn, ps *PubSub, isTls bool) {
+func initializeConnectionHandler(c net.Conn, ps *PubSub, isTls bool) {
 	var tenant string
 
 	if isTls {
 		tlsConn, ok := c.(*tls.Conn)
 		if !ok {
-			slog.Error("Server.acceptClients", "error", "expected *tls.Conn")
+			slog.Error("Server.initializeConnectionHandler", "error", "expected *tls.Conn")
 			tlsConn.Close()
 			return
 		}
 		if err := tlsConn.Handshake(); err != nil {
-			slog.Error("Server.acceptClients Handshake", "error", err)
+			slog.Error("Server.initializeConnectionHandler Handshake", "error", err)
 			tlsConn.Close()
 			return
 		}
@@ -143,9 +143,9 @@ func initializeConnectionHanlder(c net.Conn, ps *PubSub, isTls bool) {
 		tlsConnState := tlsConn.ConnectionState()
 		if len(tlsConnState.PeerCertificates) > 0 {
 			tenant = tlsConnState.PeerCertificates[0].SerialNumber.String()
-			slog.Info("Server.acceptClients", "remote", c.RemoteAddr().String(), "tenant", tenant)
+			slog.Info("Server.initializeConnectionHandler", "remote", c.RemoteAddr().String(), "tenant", tenant)
 		} else {
-			slog.Warn("Server.acceptClients, verify if you need to configure the server with CA cert to avoid this", "error", "no peer certificates found in TLS connection")
+			slog.Warn("Server.initializeConnectionHandler, verify if you need to configure the server with CA cert to avoid this", "error", "no peer certificates found in TLS connection")
 		}
 	}
 
@@ -154,7 +154,7 @@ func initializeConnectionHanlder(c net.Conn, ps *PubSub, isTls bool) {
 		MsgHandler: MessageHandler(ps, tenant, c.RemoteAddr().String()),
 	})
 	if err != nil {
-		slog.Error("NewConnectionHandler", "error", err)
+		slog.Error("Server.initializeConnectionHandler NewConnectionHandler", "error", err)
 		return
 	}
 
@@ -166,11 +166,11 @@ func initializeConnectionHanlder(c net.Conn, ps *PubSub, isTls bool) {
 	}
 
 	if err := serverConnHandler.Connect(); err != nil {
-		slog.Error("Connect", "error", err)
+		slog.Error("Server.initializeConnectionHandler, Connect", "error", err)
 		return
 	}
 
-	slog.Info("New connection", "remote", serverConnHandler.remote)
+	slog.Info("Server.initializeConnectionHandler, New connection", "remote", serverConnHandler.remote)
 	go serverConnHandler.Run()
 }
 
@@ -187,7 +187,7 @@ func Wait() {
 func loadTLSConfig(cfg *TLSConfig) (*tls.Config, error) {
 	cert, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
 	if err != nil {
-		slog.Error("Failed to load TLS certificate", "error", err)
+		slog.Error("Server.loadTLSConfig, Failed to load TLS certificate", "error", err)
 		return nil, err
 	}
 	tlsCfg := &tls.Config{Certificates: []tls.Certificate{cert}}
@@ -205,8 +205,8 @@ func loadTLSConfig(cfg *TLSConfig) (*tls.Config, error) {
 		// Attempt to append the CA certificate to the pool for client certificate validation.
 		// This enables mutual TLS (mTLS) if a CA is configured.
 		if !caPool.AppendCertsFromPEM(caCertFile) {
-			slog.Error("Failed to append CA certificate to pool")
-			return nil, errors.New("failed to append CA certificate to pool")
+			slog.Error("Server.loadTLSConfig, Failed to append CA certificate to pool", "caFile", cfg.CAFile)
+			return nil, fmt.Errorf("append CA certificate to pool: %s", cfg.CAFile)
 		}
 		tlsCfg.ClientCAs = caPool // Set the CA pool for client certificate verification.
 	}
