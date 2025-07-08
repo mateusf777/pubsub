@@ -16,6 +16,7 @@ import (
 )
 
 // PubSubConn provides an API to the PubSub engine.
+// This interface abstracts the main operations for publishing, subscribing, and managing message handlers.
 type PubSubConn interface {
 	// Stop closes the message channel, stopping the engine.
 	Stop()
@@ -33,18 +34,24 @@ type PubSubConn interface {
 	hasSubscriber(subject string) bool
 }
 
+// ConnectionHandler abstracts the lifecycle of a network connection for the pubsub server.
+// It provides methods to handle and close the connection.
 type ConnectionHandler interface {
 	Handle()
 	Close()
 }
 
+// ConnHandler manages a client/server connection and its associated pubsub engine.
+// It coordinates the connection handler and pubsub engine for a remote client.
 type ConnHandler struct {
-	conn        net.Conn
-	connHandler ConnectionHandler
-	pubSub      PubSubConn
-	remote      string
+	conn        net.Conn          // The underlying network connection.
+	connHandler ConnectionHandler // Handler for connection lifecycle.
+	pubSub      PubSubConn        // PubSub engine instance.
+	remote      string            // Remote address string.
 }
 
+// Connect performs the initial handshake with the client, sending Info with client ID and nonce.
+// Returns an error if the handshake fails.
 func (s *ConnHandler) Connect() error {
 
 	newSha := sha256.New()
@@ -76,17 +83,20 @@ func (s *ConnHandler) Connect() error {
 	return nil
 }
 
+// Run starts the connection handler and ensures resources are cleaned up on exit.
 func (s *ConnHandler) Run() {
 	defer s.Close()
 	s.connHandler.Handle()
 }
 
+// Close unsubscribes all handlers for this remote and closes the connection handler.
 func (s *ConnHandler) Close() {
 	s.pubSub.UnsubAll(s.remote)
 	s.connHandler.Close()
 }
 
-// MessageHandler return a handler for processing a remote message, verify and dispatch it and writes the response to the connection.
+// MessageHandler returns a handler for processing a remote message, verifying and dispatching it,
+// and writing the response to the connection. Handles protocol commands and errors.
 func MessageHandler(pubSub PubSubConn, tenant, remote string) core.MessageHandler {
 
 	return func(writer io.Writer, raw []byte, dataCh <-chan []byte, close chan<- struct{}) {
@@ -95,40 +105,40 @@ func MessageHandler(pubSub PubSubConn, tenant, remote string) core.MessageHandle
 
 		var result []byte
 		switch {
-		// STOP
+		// STOP: Handle connection close request from remote.
 		case bytes.Equal(bytes.ToUpper(data), core.OpStop), bytes.Equal(data, core.ControlC):
 			slog.Info("Closing connection", "remote", remote)
-			// If remote send STOP we close resources
+			// If remote sends STOP, close resources.
 			close <- struct{}{}
 			return
 
-		// PING
+		// PING: Respond with PONG.
 		case bytes.Equal(bytes.ToUpper(data), core.OpPing):
 			result = core.BuildBytes(core.OpPong, core.CRLF)
 
-		// PONG
+		// PONG: Acknowledge with OK.
 		case bytes.Equal(bytes.ToUpper(data), core.OpPong):
 			result = core.OK
 
-		// PUB
+		// PUB: Handle publish command.
 		case bytes.HasPrefix(bytes.ToUpper(data), core.OpPub):
 			result = handlePub(pubSub, data, dataCh, tenant)
 
-		// SUB
+		// SUB: Handle subscribe command.
 		case bytes.HasPrefix(bytes.ToUpper(data), core.OpSub):
 			slog.Debug("sub", "value", data)
 			result = handleSub(writer, pubSub, tenant, remote, data)
 
-		// UNSUB
+		// UNSUB: Handle unsubscribe command.
 		case bytes.HasPrefix(bytes.ToUpper(data), core.OpUnsub):
 			result = handleUnsub(pubSub, remote, data)
 
-		// NO DATA
+		// NO DATA: Ignore empty messages.
 		case bytes.Equal(data, core.Empty):
 			return
 
 		default:
-			// UNKNOWN
+			// UNKNOWN: Respond with protocol error.
 			result = core.BuildBytes([]byte("-ERR invalid protocol"), core.CRLF)
 		}
 
@@ -143,15 +153,16 @@ func MessageHandler(pubSub PubSubConn, tenant, remote string) core.MessageHandle
 	}
 }
 
-// handlePub Handles PUB message. See core.OpPub.
+// handlePub handles PUB messages. See core.OpPub.
+// It parses the subject and optional reply-to, reads the message payload, and dispatches it to the pubsub engine.
 func handlePub(pubSub PubSubConn, received []byte, dataCh <-chan []byte, tenant string) []byte {
 	// Default result
 	result := core.OK
 
-	// Get next line
+	// Get next line (message payload)
 	msg := <-dataCh
 
-	// Parse
+	// Parse command arguments
 	args := bytes.Split(received, core.Space)
 	if len(args) < 2 || len(args) > 3 {
 		return []byte("-ERR should be PUB <subject> [reply-to]   \n")
@@ -169,37 +180,39 @@ func handlePub(pubSub PubSubConn, received []byte, dataCh <-chan []byte, tenant 
 		opts = append(opts, WithTenantPub(tenant))
 	}
 
-	// Dispatch
+	// Dispatch message to pubsub engine
 	pubSub.Publish(string(args[1]), msg, opts...)
 
 	return result
 }
 
-// handleUnsub Handles UNSUB. See core.OpUnsub.
+// handleUnsub handles UNSUB commands. See core.OpUnsub.
+// It parses the subject and subscription ID, and unsubscribes the handler from the pubsub engine.
 func handleUnsub(pubSub PubSubConn, remote string, received []byte) []byte {
 	// Default result
 	result := core.OK
 
-	// Parse
+	// Parse command arguments
 	args := bytes.Split(received, core.Space)
 	if len(args) != 3 {
 		return []byte("-ERR should be UNSUB <subject> <id>\n")
 	}
 	id, _ := strconv.Atoi(string(args[2]))
 
-	// Dispatch
+	// Dispatch unsubscribe to pubsub engine
 	if err := pubSub.Unsubscribe(string(args[1]), remote, id); err != nil {
 		return core.BuildBytes(core.OpERR, core.Space, []byte(err.Error()))
 	}
 	return result
 }
 
-// handleSub Handles SUB. See core.OpSub.
+// handleSub handles SUB commands. See core.OpSub.
+// It parses the subject, subscription ID, and optional group, and subscribes the handler to the pubsub engine.
 func handleSub(writer io.Writer, pubSub PubSubConn, tenant string, remote string, received []byte) []byte {
 	// Default result
 	result := core.OK
 
-	// Parse
+	// Parse command arguments
 	args := bytes.Split(received, core.Space)
 	if len(args) < 3 || len(args) > 4 {
 		return []byte("-ERR should be SUB <subject> <id> [group]\n")
@@ -219,7 +232,7 @@ func handleSub(writer io.Writer, pubSub PubSubConn, tenant string, remote string
 		opts = append(opts, WithTenantSub(tenant))
 	}
 
-	// Dispatch
+	// Dispatch subscribe to pubsub engine
 	err := pubSub.Subscribe(string(args[1]), remote, subscriberHandler(writer, subID), opts...)
 	if err != nil {
 		return core.BuildBytes(core.OpERR, core.Space, []byte(err.Error()))
@@ -228,6 +241,8 @@ func handleSub(writer io.Writer, pubSub PubSubConn, tenant string, remote string
 	return result
 }
 
+// subscriberHandler returns a Handler that writes received messages to the connection.
+// It formats the message according to the protocol and logs errors if sending fails.
 func subscriberHandler(writer io.Writer, sid int) Handler {
 	return func(msg Message) {
 		subID := strconv.AppendInt([]byte{}, int64(sid), 10)
