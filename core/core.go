@@ -260,7 +260,7 @@ func (ch *ConnectionHandler) Close() {
 // This assures all messages were consumed and processed.
 // Used only for client connections to ensure graceful shutdown.
 func (ch *ConnectionHandler) waitServerClose(ctx context.Context) {
-	l := logger.With("location", "Conn.waitServerClose()")
+	l := logger.With("location", "ConnectionHandler.waitServerClose()")
 
 	ticker := time.NewTicker(250 * time.Millisecond)
 	buf := make([]byte, 8)
