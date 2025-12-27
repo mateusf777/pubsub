@@ -85,7 +85,11 @@ func (hc *HealthCheck) healthHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		// Log error but response status was already sent
+		// In production, consider using structured logging
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
 }
 
 // readyHandler responds to readiness check requests.
@@ -103,18 +107,22 @@ func (hc *HealthCheck) readyHandler(w http.ResponseWriter, r *http.Request) {
 		Timestamp: time.Now(),
 	}
 
+	w.Header().Set("Content-Type", "application/json")
+
 	if !ready {
 		response.Message = "Server is starting up"
-		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(response)
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		}
 		return
 	}
 
 	response.Message = "Server is ready"
-	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
 }
 
 // Close gracefully shuts down the health check server.

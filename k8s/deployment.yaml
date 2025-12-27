@@ -37,8 +37,8 @@ spec:
     spec:
       containers:
       - name: pubsub
-        image: pubsub:latest
-        imagePullPolicy: IfNotPresent
+        image: pubsub:v1.0.0  # Use specific version tag instead of 'latest'
+        imagePullPolicy: Always  # Or use IfNotPresent with specific version
         ports:
         - name: pubsub
           containerPort: 9999

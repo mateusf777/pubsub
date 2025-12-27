@@ -45,10 +45,15 @@ func main() {
 				slog.Error("Health check server error", "error", err)
 			}
 		}()
-		// Mark as ready after server starts listening
+		// Mark as ready immediately for testing
+		// In production, you might want to add additional readiness checks
+		healthCheck.SetReady(true)
+
+		// Cleanup on exit
 		defer func() {
 			if healthCheck != nil {
 				healthCheck.SetReady(false)
+				healthCheck.Close()
 			}
 		}()
 	}
@@ -61,10 +66,5 @@ func main() {
 		}), server.WithPubSub(ps))
 	} else {
 		server.Run(address, server.WithPubSub(ps))
-	}
-
-	// Mark as ready once listening
-	if healthCheck != nil {
-		healthCheck.SetReady(true)
 	}
 }

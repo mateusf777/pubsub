@@ -44,9 +44,9 @@ jobs:
 
     - name: staticcheck
       run: |
-        cd core && ~/go/bin/staticcheck ./... || true
-        cd ../server && ~/go/bin/staticcheck ./... || true
-        cd ../client && ~/go/bin/staticcheck ./... || true
+        cd core && ~/go/bin/staticcheck ./...
+        cd ../server && ~/go/bin/staticcheck ./...
+        cd ../client && ~/go/bin/staticcheck ./...
         cd ../example && ~/go/bin/staticcheck ./...
 
     - name: Install golangci-lint
@@ -54,9 +54,9 @@ jobs:
 
     - name: golangci-lint
       run: |
-        cd core && ~/go/bin/golangci-lint run --timeout=5m || true
-        cd ../server && ~/go/bin/golangci-lint run --timeout=5m || true
-        cd ../client && ~/go/bin/golangci-lint run --timeout=5m || true
+        cd core && ~/go/bin/golangci-lint run --timeout=5m
+        cd ../server && ~/go/bin/golangci-lint run --timeout=5m
+        cd ../client && ~/go/bin/golangci-lint run --timeout=5m
 
   security:
     name: Security
