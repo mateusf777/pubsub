@@ -1,0 +1,123 @@
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+
+  govet:
+    enable-all: true
+
+  gofmt:
+    simplify: true
+
+  goimports:
+    local-prefixes: github.com/mateusf777/pubsub
+
+  golint:
+    min-confidence: 0.8
+
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - experimental
+      - opinionated
+      - performance
+      - style
+
+  maligned:
+    suggest-new: true
+
+  dupl:
+    threshold: 100
+
+  goconst:
+    min-len: 3
+    min-occurrences: 3
+
+  misspell:
+    locale: US
+
+  lll:
+    line-length: 140
+
+  gocyclo:
+    min-complexity: 15
+
+  gocognit:
+    min-complexity: 20
+
+  cyclop:
+    max-complexity: 15
+
+  funlen:
+    lines: 100
+    statements: 50
+
+  nestif:
+    min-complexity: 4
+
+  exhaustive:
+    default-signifies-exhaustive: true
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck       # Check for unchecked errors
+    - gosimple       # Simplify code
+    - govet          # Reports suspicious constructs
+    - ineffassign    # Detect ineffectual assignments
+    - staticcheck    # Advanced Go linter
+    - typecheck      # Type check code
+    - unused         # Check for unused code
+    - gofmt          # Check formatting
+    - goimports      # Check import formatting
+    - misspell       # Check for misspelled English words
+    - goconst        # Find repeated strings that could be constants
+    - unconvert      # Remove unnecessary type conversions
+    - gosec          # Security checker
+    - exportloopref  # Check for loop variable capture
+    - noctx          # Find HTTP requests without context
+    - bodyclose      # Check HTTP response body is closed
+    - rowserrcheck   # Check for SQL row errors
+    - sqlclosecheck  # Check for SQL statement/rows closures
+    - unparam        # Find unused function parameters
+    - prealloc       # Find slice declarations that could preallocate
+    - predeclared    # Find code that shadows predeclared identifiers
+    - revive         # Fast, configurable, extensible linter
+    - whitespace     # Check for unnecessary whitespace
+    - wsl            # Whitespace linter (enforces empty lines)
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+  exclude-rules:
+    # Exclude some linters from running on tests files.
+    - path: _test\.go
+      linters:
+        - gocyclo
+        - errcheck
+        - dupl
+        - gosec
+        - funlen
+        - gocognit
+
+    # Exclude known false positives
+    - linters:
+        - staticcheck
+      text: "SA1019:"  # Deprecation warnings
+
+    # Allow embed
+    - linters:
+        - typecheck
+      text: "embed"
+
+output:
+  format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
