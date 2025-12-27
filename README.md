@@ -284,6 +284,163 @@ STOP
 
 ---
 
+## Health Checks
+
+The server provides HTTP health check endpoints (enabled by default):
+
+**Health Endpoint** (`/health` or `/healthz`):
+- Always returns 200 OK if the process is running
+- Useful for liveness probes in Kubernetes
+- Returns JSON with status, uptime, and TLS info
+
+**Readiness Endpoint** (`/ready` or `/readyz`):
+- Returns 200 OK when server is ready to accept connections
+- Returns 503 during startup
+- Useful for readiness probes in Kubernetes
+
+**Configuration**:
+```bash
+# Health check address (default: 0.0.0.0:8080)
+PUBSUB_HEALTH_ADDRESS=0.0.0.0:8080
+
+# Enable/disable health checks (default: true)
+PUBSUB_ENABLE_HEALTH=true
+```
+
+**Example**:
+```bash
+# Start server with health checks
+./build/ps-server
+
+# Check health
+curl http://localhost:8080/health
+# Response: {"status":"healthy","timestamp":"...","uptime":"1m30s","tls":false}
+
+# Check readiness
+curl http://localhost:8080/ready
+# Response: {"ready":true,"timestamp":"...","message":"Server is ready"}
+```
+
+---
+
+## Development
+
+### Using the Makefile
+
+The project includes a Makefile for common development tasks:
+
+```bash
+# Build all binaries
+make build
+
+# Run tests
+make test
+
+# Run tests with coverage
+make test-coverage
+
+# Format code
+make fmt
+
+# Run linters
+make lint
+
+# Run security checks
+make govulncheck
+
+# Build Docker image
+make docker-build
+
+# Clean build artifacts
+make clean
+
+# Install development tools
+make install-tools
+
+# See all available targets
+make help
+```
+
+### Running Tests
+
+Tests require mockery for mock generation:
+```bash
+make install-tools
+make test
+```
+
+### CI/CD
+
+The project uses GitHub Actions with:
+- **Lint job**: Format checking, go vet, staticcheck, golangci-lint
+- **Security job**: govulncheck, Trivy filesystem and container scanning
+- **Build job**: Compilation, unit tests, integration tests
+- Security scan results uploaded to GitHub Security tab
+
+---
+
+## Deployment
+
+### Docker
+
+Build and run with Docker:
+```bash
+docker build -t pubsub:latest -f server/Dockerfile .
+docker run -p 9999:9999 -p 8080:8080 pubsub:latest
+```
+
+With TLS:
+```bash
+docker run \
+  -e PUBSUB_TLS_CERT=/certs/server.crt \
+  -e PUBSUB_TLS_KEY=/certs/server.key \
+  -e PUBSUB_ADDRESS=0.0.0.0:9443 \
+  -v $(pwd)/certs:/certs \
+  -p 9443:9443 -p 8080:8080 \
+  pubsub:latest
+```
+
+### Kubernetes
+
+See [k8s/README.md](k8s/README.md) for detailed Kubernetes deployment instructions.
+
+Quick deploy:
+```bash
+kubectl apply -f k8s/deployment.yaml
+```
+
+Features:
+- 3 replicas with auto-scaling (HPA)
+- Health and readiness probes
+- Security best practices (non-root, read-only filesystem, dropped capabilities)
+- Resource limits and requests
+
+---
+
+## Security
+
+This project implements several security best practices:
+
+- **TLS 1.2+** with hardened cipher suites
+- **Client certificate authentication** (mTLS) for multi-tenancy
+- **Non-root container** user (distroless base image)
+- **Security scanning** in CI (govulncheck, Trivy)
+- **Kubernetes security context** (dropped capabilities, seccomp)
+
+See [SECURITY.md](SECURITY.md) for our security policy and reporting vulnerabilities.
+
+---
+
+## Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for:
+- How to set up your development environment
+- Code style guidelines
+- Testing requirements
+- Pull request process
+
+---
+
 ## Project Goals
 
 This project was built to learn and demonstrate:
@@ -292,6 +449,17 @@ This project was built to learn and demonstrate:
 * Designing a line-based protocol from scratch
 * Building concurrent systems with minimal external dependencies
 * Writing testable and structured code for infrastructure services
+
+---
+
+## Documentation
+
+- [README.md](README.md) - This file
+- [SECURITY.md](SECURITY.md) - Security policy and best practices
+- [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
+- [CHANGELOG.md](CHANGELOG.md) - Version history
+- [REVIEW_REPORT.md](REVIEW_REPORT.md) - Comprehensive code review report
+- [k8s/README.md](k8s/README.md) - Kubernetes deployment guide
 
 ---
 
