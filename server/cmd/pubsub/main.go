@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log/slog"
 	"os"
 
 	"github.com/mateusf777/pubsub/server"
@@ -9,7 +10,10 @@ import (
 // ATTENTION: This server supports TLS for secure transport and, if a CA is configured,
 // will validate client certificates for authentication. If you run without TLS or CA,
 // connections will not be encrypted or authenticated.
-const defaultAddress = "0.0.0.0:9999"
+const (
+	defaultAddress       = "0.0.0.0:9999"
+	defaultHealthAddress = "0.0.0.0:8080"
+)
 
 func main() {
 	address := os.Getenv("PUBSUB_ADDRESS")
@@ -21,7 +25,33 @@ func main() {
 	keyFile := os.Getenv("PUBSUB_TLS_KEY")
 	caFile := os.Getenv("PUBSUB_TLS_CA")
 
+	// Health check endpoint configuration
+	healthAddress := os.Getenv("PUBSUB_HEALTH_ADDRESS")
+	if len(healthAddress) == 0 {
+		healthAddress = defaultHealthAddress
+	}
+	enableHealth := os.Getenv("PUBSUB_ENABLE_HEALTH") != "false" // Enabled by default
+
 	ps := server.NewPubSub(server.PubSubConfig{})
+
+	// Start health check server if enabled
+	var healthCheck *server.HealthCheck
+	if enableHealth {
+		tlsEnabled := certFile != "" && keyFile != ""
+		healthCheck = server.NewHealthCheck(healthAddress, ps, tlsEnabled)
+		go func() {
+			slog.Info("Starting health check server", "address", healthAddress)
+			if err := healthCheck.Start(); err != nil {
+				slog.Error("Health check server error", "error", err)
+			}
+		}()
+		// Mark as ready after server starts listening
+		defer func() {
+			if healthCheck != nil {
+				healthCheck.SetReady(false)
+			}
+		}()
+	}
 
 	if certFile != "" && keyFile != "" {
 		server.Run(address, server.WithTLS(server.TLSConfig{
@@ -31,5 +61,10 @@ func main() {
 		}), server.WithPubSub(ps))
 	} else {
 		server.Run(address, server.WithPubSub(ps))
+	}
+
+	// Mark as ready once listening
+	if healthCheck != nil {
+		healthCheck.SetReady(true)
 	}
 }

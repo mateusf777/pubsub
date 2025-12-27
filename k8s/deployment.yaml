@@ -1,0 +1,137 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pubsub
+  labels:
+    name: pubsub
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pubsub-config
+  namespace: pubsub
+data:
+  PUBSUB_ADDRESS: "0.0.0.0:9999"
+  PUBSUB_HEALTH_ADDRESS: "0.0.0.0:8080"
+  PUBSUB_ENABLE_HEALTH: "true"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pubsub-server
+  namespace: pubsub
+  labels:
+    app: pubsub
+    component: server
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: pubsub
+      component: server
+  template:
+    metadata:
+      labels:
+        app: pubsub
+        component: server
+    spec:
+      containers:
+      - name: pubsub
+        image: pubsub:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: pubsub
+          containerPort: 9999
+          protocol: TCP
+        - name: health
+          containerPort: 8080
+          protocol: TCP
+        envFrom:
+        - configMapRef:
+            name: pubsub-config
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: health
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        resources:
+          limits:
+            cpu: "1000m"
+            memory: "512Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65532
+          capabilities:
+            drop:
+            - ALL
+      securityContext:
+        fsGroup: 65532
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pubsub-server
+  namespace: pubsub
+  labels:
+    app: pubsub
+    component: server
+spec:
+  type: ClusterIP
+  ports:
+  - name: pubsub
+    port: 9999
+    targetPort: pubsub
+    protocol: TCP
+  - name: health
+    port: 8080
+    targetPort: health
+    protocol: TCP
+  selector:
+    app: pubsub
+    component: server
+  sessionAffinity: None
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: pubsub-server
+  namespace: pubsub
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: pubsub-server
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80

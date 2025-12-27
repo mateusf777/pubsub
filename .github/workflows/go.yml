@@ -11,6 +11,90 @@ on:
 
 jobs:
 
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23.4'
+        check-latest: true
+        cache-dependency-path: "**/*.sum"
+
+    - name: Check formatting
+      run: |
+        if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+          echo "The following files are not formatted:"
+          gofmt -s -l .
+          exit 1
+        fi
+
+    - name: go vet
+      run: |
+        cd core && go vet ./...
+        cd ../server && go vet ./...
+        cd ../client && go vet ./...
+        cd ../example && go vet ./...
+
+    - name: Install staticcheck
+      run: go install honnef.co/go/tools/cmd/staticcheck@latest
+
+    - name: staticcheck
+      run: |
+        cd core && ~/go/bin/staticcheck ./... || true
+        cd ../server && ~/go/bin/staticcheck ./... || true
+        cd ../client && ~/go/bin/staticcheck ./... || true
+        cd ../example && ~/go/bin/staticcheck ./...
+
+    - name: Install golangci-lint
+      run: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.55.2
+
+    - name: golangci-lint
+      run: |
+        cd core && ~/go/bin/golangci-lint run --timeout=5m || true
+        cd ../server && ~/go/bin/golangci-lint run --timeout=5m || true
+        cd ../client && ~/go/bin/golangci-lint run --timeout=5m || true
+
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23.4'
+        check-latest: true
+        cache-dependency-path: "**/*.sum"
+
+    - name: Install govulncheck
+      run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+    - name: Run govulncheck
+      run: |
+        cd core && ~/go/bin/govulncheck ./... || true
+        cd ../server && ~/go/bin/govulncheck ./... || true
+        cd ../client && ~/go/bin/govulncheck ./... || true
+        cd ../example && ~/go/bin/govulncheck ./... || true
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
   build:
     runs-on: ubuntu-latest
     steps:
@@ -115,6 +199,20 @@ jobs:
         file: server/Dockerfile
         push: false
         tags: pubsub:latest
+
+    - name: Scan Docker image with Trivy
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'pubsub:latest'
+        format: 'sarif'
+        output: 'trivy-image-results.sarif'
+
+    - name: Upload Trivy image scan results
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: 'trivy-image-results.sarif'
+        category: 'container-image'
 
     - name: Write TLS certificate and key
       run: |

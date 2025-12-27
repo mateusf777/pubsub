@@ -184,13 +184,33 @@ func Wait() {
 
 // loadTLSConfig loads and configures the TLS settings for the server.
 // Loads the certificate and key, and if a CA is provided, enables client certificate validation (mTLS).
+// Configures secure TLS settings including minimum version and preferred cipher suites.
 func loadTLSConfig(cfg *TLSConfig) (*tls.Config, error) {
 	cert, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
 	if err != nil {
 		slog.Error("Server.loadTLSConfig, Failed to load TLS certificate", "error", err)
 		return nil, err
 	}
-	tlsCfg := &tls.Config{Certificates: []tls.Certificate{cert}}
+
+	// Configure TLS with security best practices
+	tlsCfg := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12, // Enforce minimum TLS 1.2
+		CurvePreferences: []tls.CurveID{
+			tls.X25519,    // Modern, fast elliptic curve
+			tls.CurveP256, // Widely supported
+		},
+		PreferServerCipherSuites: true, // Prefer server's cipher suite order
+		// Modern cipher suites (TLS 1.2+)
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+		},
+	}
 
 	if cfg.CAFile != "" {
 		tlsCfg.ClientAuth = tls.RequireAndVerifyClientCert
